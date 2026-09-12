@@ -108,7 +108,7 @@
       <p class="label">Баланс счёта</p>
       <p class="balance" id="balance">0 ELB</p>
       <div class="row">
-        <button id="deposit">Тестовое пополнение +100</button>
+        <button id="deposit">Подать заявку на пополнение</button>
         <button id="withdraw">Снять средства</button>
       </div>
     </div>
@@ -208,6 +208,30 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="depositOverlay">
+  <div class="modal">
+    <h3>Заявка на пополнение счёта</h3>
+    <p>Укажите цель зачисления средств — без этого заявка не будет принята к рассмотрению.</p>
+    <div class="field">
+      <label>Цель пополнения</label>
+      <select id="depositReason" style="width:100%; padding:12px 14px; border-radius:10px; border:1px solid #22322a; background:#0f1512; color:#eaf3ee; font-size:14px;">
+        <option>Заработная плата</option>
+        <option>Возврат по договору</option>
+        <option>Личные сбережения</option>
+        <option>Иное (потребует доп. проверки)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Сумма (ELB)</label>
+      <input id="depositAmount" type="number" placeholder="100" min="1" value="100">
+    </div>
+    <div class="confirm-row">
+      <button class="cancel" id="depositCancel">Отмена</button>
+      <button class="ok" id="depositSubmit">Подать заявку</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let myId = null;
 let balance = 1000;
@@ -267,7 +291,33 @@ function addFine(amount){
   addTransaction('Штраф: ' + reason, -amount);
 }
 
-document.getElementById('deposit').addEventListener('click', () => addTransaction('Тестовое пополнение', 100));
+document.getElementById('deposit').addEventListener('click', () => {
+  document.getElementById('depositOverlay').classList.add('open');
+});
+document.getElementById('depositCancel').addEventListener('click', () => {
+  document.getElementById('depositOverlay').classList.remove('open');
+});
+document.getElementById('depositSubmit').addEventListener('click', () => {
+  const reason = document.getElementById('depositReason').value;
+  const amount = parseInt(document.getElementById('depositAmount').value, 10) || 100;
+  document.getElementById('depositOverlay').classList.remove('open');
+
+  const steps = ['Регистрация заявления', 'Проверка источника средств', 'Проверка лимита зачисления'];
+  if (reason === 'Иное (потребует доп. проверки)') {
+    steps.push('Дополнительная проверка комплаенс-отделом', 'Запрос обоснования');
+  }
+  steps.push('Согласование с руководителем отделения', 'Итоговое решение');
+
+  runSteps(steps, () => {
+    const rejected = Math.random() < 0.3;
+    if (rejected) {
+      addFine(0, 'Заявка на пополнение отклонена — несоответствие формы. Подайте заявку повторно.');
+      document.getElementById('modalDesc').textContent = 'Заявка отклонена комиссией. Средства не зачислены — попробуйте подать заявку заново.';
+    } else {
+      addTransaction('Пополнение (' + reason + ')', amount);
+    }
+  });
+});
 document.getElementById('fine').addEventListener('click', () => addFine(50));
 
 function askConfirm(title, desc, onYes){
