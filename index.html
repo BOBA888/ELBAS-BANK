@@ -92,11 +92,10 @@
     <p class="id-tag" id="myIdTag">ID: ...</p>
   </div>
 
-  <div class="warn-banner">Симулятор. Валюта ELB вымышленная и не имеет реальной ценности — обменять на настоящие деньги невозможно.</div>
+  <div class="warn-banner">Симулятор. Валюта ELB вымышленная, данные хранятся только в этой вкладке браузера и сбрасываются при перезагрузке страницы.</div>
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="main">Главная</button>
-    <button class="tab-btn" data-tab="transfer">Перевод</button>
     <button class="tab-btn" data-tab="fines">Штрафы<span class="badge-count" id="fineBadge">0</span></button>
     <button class="tab-btn" data-tab="history">История</button>
     <button class="tab-btn" data-tab="docs">Документы</button>
@@ -117,23 +116,6 @@
       <div class="fine-title">⚠ Штраф</div>
       <p class="sub" style="margin-bottom:10px;">Просрочка операции — начисляется штраф.</p>
       <button id="fine" class="fine-btn">Применить штраф 50</button>
-    </div>
-  </div>
-
-  <div class="tab-panel" id="tab-transfer">
-    <div class="card">
-      <p class="hist-title">Перевод другому пользователю</p>
-      <p class="sub" style="margin-bottom:12px;">Работает только если оба открыли эту же ссылку в Claude — данные хранятся в общем хранилище артефакта.</p>
-      <div class="field">
-        <label>ID получателя</label>
-        <input id="sendToId" type="text" placeholder="Например EL-482913">
-      </div>
-      <div class="field">
-        <label>Сумма (ELB)</label>
-        <input id="sendAmount" type="number" placeholder="100" min="1">
-      </div>
-      <button id="sendBtn" style="width:100%;">Отправить</button>
-      <p class="sub" id="sendStatus" style="margin-top:10px;"></p>
     </div>
   </div>
 
@@ -227,9 +209,8 @@
 </div>
 
 <script>
-const hasStorage = typeof window.storage !== 'undefined';
 let myId = null;
-let balance = 0;
+let balance = 1000;
 let txnHistory = [];
 let fines = [];
 
@@ -250,40 +231,10 @@ function fmt(n){ return n.toLocaleString('ru-RU') + ' ELB'; }
 function nowTime(){ return new Date().toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}); }
 function genId(){ return 'EL-' + Math.floor(100000 + Math.random()*900000); }
 
-async function loadOrCreateAccount(){
-  if (hasStorage) {
-    try {
-      const local = await window.storage.get('my-account-id', false);
-      myId = local.value;
-    } catch(e) {
-      myId = genId();
-      await window.storage.set('my-account-id', myId, false);
-    }
-    try {
-      const acc = await window.storage.get('account:' + myId, true);
-      const data = JSON.parse(acc.value);
-      balance = data.balance;
-      txnHistory = data.history || [];
-      fines = data.fines || [];
-    } catch(e) {
-      balance = 1000;
-      txnHistory = [];
-      fines = [];
-      await saveAccount();
-    }
-  } else {
-    myId = genId();
-    balance = 1000;
-  }
+function initAccount(){
+  myId = genId();
   document.getElementById('myIdTag').textContent = 'ID: ' + myId;
   renderBalance(); renderHistory(); renderFines();
-}
-
-async function saveAccount(){
-  if (!hasStorage) return;
-  try {
-    await window.storage.set('account:' + myId, JSON.stringify({balance, history: txnHistory.slice(0,50), fines: fines.slice(0,50)}), true);
-  } catch(e) { console.error('storage save failed', e); }
 }
 
 function renderBalance(){
@@ -304,17 +255,16 @@ function renderFines(){
   if (!fines.length) { finesListEl.innerHTML = '<p class="empty">Штрафов пока нет</p>'; return; }
   finesListEl.innerHTML = fines.map(f => '<div class="notice"><div class="ic">⚠</div><div class="txt"><div><b>Штраф '+f.amount+' ELB</b></div><div>'+f.reason+'</div><div class="time">'+f.time+'</div></div></div>').join('');
 }
-async function addTransaction(label, amount){
+function addTransaction(label, amount){
   txnHistory.unshift({label, amount, time: nowTime()});
   balance += amount;
   renderBalance(); renderHistory();
-  await saveAccount();
 }
-async function addFine(amount){
+function addFine(amount){
   const reason = fineReasons[Math.floor(Math.random()*fineReasons.length)];
   fines.unshift({amount, reason, time: nowTime()});
   renderFines();
-  await addTransaction('Штраф: ' + reason, -amount);
+  addTransaction('Штраф: ' + reason, -amount);
 }
 
 document.getElementById('deposit').addEventListener('click', () => addTransaction('Тестовое пополнение', 100));
@@ -367,35 +317,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
-// --- Перевод между пользователями (только через общее хранилище артефакта) ---
-document.getElementById('sendBtn').addEventListener('click', async () => {
-  const status = document.getElementById('sendStatus');
-  const toId = document.getElementById('sendToId').value.trim();
-  const amount = parseInt(document.getElementById('sendAmount').value, 10);
-  if (!hasStorage) { status.textContent = 'Перевод недоступен: откройте это приложение как артефакт в Claude, а не как скачанный файл.'; return; }
-  if (!toId || !amount || amount <= 0) { status.textContent = 'Укажите ID получателя и сумму.'; return; }
-  if (toId === myId) { status.textContent = 'Нельзя перевести самому себе.'; return; }
-  if (amount > balance) { status.textContent = 'Недостаточно средств.'; return; }
-  status.textContent = 'Отправка...';
-  try {
-    let recipientData;
-    try {
-      const r = await window.storage.get('account:' + toId, true);
-      recipientData = JSON.parse(r.value);
-    } catch(e) {
-      recipientData = { balance: 0, history: [], fines: [] };
-    }
-    recipientData.balance += amount;
-    recipientData.history = recipientData.history || [];
-    recipientData.history.unshift({ label: 'Перевод от ' + myId, amount, time: nowTime() });
-    await window.storage.set('account:' + toId, JSON.stringify(recipientData), true);
-    await addTransaction('Перевод пользователю ' + toId, -amount);
-    status.textContent = 'Отправлено ' + amount + ' ELB на ' + toId;
-  } catch(e) {
-    status.textContent = 'Ошибка перевода: ' + e.message;
-  }
-});
-
 // --- Документы ---
 document.getElementById('genCert').addEventListener('click', () => {
   const out = document.getElementById('docOutput');
@@ -420,9 +341,8 @@ function botReply(q){
   if (s.includes('баланс')) return 'Ваш текущий баланс: ' + fmt(balance) + '.';
   if (s.includes('штраф')) return 'Штрафы начисляются за нарушение регламента отделения — посмотреть причину можно во вкладке «Штрафы».';
   if (s.includes('снят')) return 'Снятие оформляется через кнопку «Снять средства» на главной — заявка проходит несколько этапов согласования.';
-  if (s.includes('id')) return 'Ваш ID счёта: ' + myId + '. Сообщите его другому пользователю, чтобы получить перевод.';
-  if (s.includes('перевод')) return 'Перевод другому пользователю — во вкладке «Перевод». Работает только если оба открыли это же приложение внутри Claude.';
-  return 'Спасибо за обращение. Уточните вопрос — я могу рассказать про баланс, штрафы, снятие средств, ID счёта и переводы.';
+  if (s.includes('id')) return 'Ваш ID счёта: ' + myId + '.';
+  return 'Спасибо за обращение. Уточните вопрос — я могу рассказать про баланс, штрафы, снятие средств и ID счёта.';
 }
 document.getElementById('chatSend').addEventListener('click', () => {
   const input = document.getElementById('chatInput');
@@ -442,7 +362,7 @@ document.querySelectorAll('.chat-quick button').forEach(b => {
 });
 addChatMsg('Здравствуйте! Я бот поддержки Elbas Bank. Чем могу помочь?', 'bot');
 
-loadOrCreateAccount();
+initAccount();
 </script>
 </body>
 </html>
