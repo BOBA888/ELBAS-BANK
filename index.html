@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Elbas Bank — симулятор</title>
+<title>Elbas Bank</title>
 <meta name="theme-color" content="#0b0f0c">
 <style>
   * { box-sizing: border-box; }
@@ -76,6 +76,59 @@
   .doc-item .doc-title { font-size:13px; font-weight:700; margin-bottom:4px; }
   .doc-item .doc-sub { font-size:11px; color:#7a8c81; margin-bottom:8px; }
   .warn-banner { font-size:11px; color:#7a8c81; background:#0f1512; border:1px solid #1f2b23; border-radius:10px; padding:8px 10px; margin-bottom:10px; line-height:1.5; }
+
+  @keyframes blink { 0%,80%,100% { opacity:.25; } 40% { opacity:1; } }
+  .chat-msg.typing { display:inline-block; }
+  .chat-msg.typing span { display:inline-block; width:5px; height:5px; border-radius:50%; background:#7a8c81; margin:0 2px; animation:blink 1s infinite; }
+  .chat-msg.typing span:nth-child(2) { animation-delay:.15s; }
+  .chat-msg.typing span:nth-child(3) { animation-delay:.3s; }
+  .doc-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.78); z-index:600; overflow:auto; padding:16px; }
+  .doc-overlay.open { display:block; }
+  .doc-toolbar { max-width:640px; margin:0 auto 12px; display:flex; gap:10px; }
+  .doc-hint { max-width:640px; margin:0 auto 12px; font-size:11px; color:#9fb2a6; }
+  .paper { max-width:640px; margin:0 auto 24px; background:#fdfdfb; color:#1b1f1c; padding:36px 40px; border-radius:4px; font-family:Georgia,"Times New Roman",serif; font-size:13px; line-height:1.55; }
+  .paper-head { display:flex; align-items:center; gap:14px; border-bottom:2px solid #1a6b45; padding-bottom:12px; margin-bottom:18px; }
+  .paper-state { font-size:10px; letter-spacing:2px; color:#4a5a50; }
+  .paper-bank { font-size:20px; font-weight:700; color:#1a6b45; letter-spacing:1px; }
+  .paper-addr { font-size:10px; color:#6b7a70; }
+  .paper-title { text-align:center; font-size:17px; font-weight:700; letter-spacing:1px; text-transform:uppercase; margin:6px 0 2px; }
+  .paper-num { text-align:center; font-size:12px; color:#4a5a50; margin-bottom:18px; }
+  .paper p { margin:0 0 10px; text-align:justify; }
+  .paper h4 { margin:14px 0 4px; font-size:13px; }
+  .paper table { width:100%; border-collapse:collapse; margin:10px 0 14px; font-size:12px; }
+  .paper th, .paper td { border:1px solid #c9d1cb; padding:5px 8px; text-align:left; }
+  .paper th { background:#eef3ef; }
+  .paper td.r, .paper th.r { text-align:right; }
+  .paper .kv { display:flex; justify-content:space-between; border-bottom:1px dotted #c9d1cb; padding:4px 0; }
+  .paper .big { font-size:20px; font-weight:700; color:#1a6b45; }
+  .paper-sign { display:flex; justify-content:space-between; align-items:flex-end; margin-top:26px; gap:16px; }
+  .sig-block { flex:1; }
+  .sig-line { border-bottom:1px solid #1b1f1c; height:34px; display:flex; align-items:flex-end; }
+  .sig-scrawl { font-family:"Brush Script MT","Segoe Script",cursive; font-size:22px; color:#1f3b8a; transform:rotate(-3deg); }
+  .sig-cap { font-size:10px; color:#6b7a70; margin-top:3px; }
+  .paper-foot { margin-top:18px; padding-top:8px; border-top:1px solid #c9d1cb; font-size:10px; color:#6b7a70; text-align:center; }
+  @media print {
+    @page { size:A4; margin:14mm; }
+    body { background:#fff !important; }
+    body > *:not(#docOverlay) { display:none !important; }
+    .doc-overlay:not(.open) { display:none !important; }
+    .doc-overlay { position:static; display:block; background:none; padding:0; overflow:visible; }
+    .doc-toolbar, .doc-hint { display:none !important; }
+    .paper { box-shadow:none; max-width:none; margin:0; padding:0; border-radius:0; }
+  }
+  .acct-row { display:flex; gap:8px; margin-top:8px; align-items:center; }
+  .acct-row select { flex:1; min-width:0; padding:8px 10px; border-radius:10px; border:1px solid #22322a; background:#0f1512; color:#eaf3ee; font-size:12px; }
+  .acct-row button { flex:none; min-width:0; padding:8px 12px; font-size:12px; }
+  .fund-bar { height:10px; border-radius:6px; background:#0f1512; border:1px solid #1f2b23; overflow:hidden; margin:12px 0 6px; }
+  .fund-fill { height:100%; width:0; background:linear-gradient(90deg,#1a6b45,#3ecf8e); transition:width .6s ease; }
+  .fund-meta { display:flex; justify-content:space-between; font-size:12px; color:#7a8c81; margin-bottom:12px; }
+  .fund-meta b { color:#3ecf8e; }
+  .fund-anon { display:flex; gap:8px; align-items:center; font-size:12px; color:#7a8c81; margin-bottom:12px; }
+  .fund-anon input { width:auto; }
+  .modal { max-height:90vh; overflow:auto; }
+  .badge-st { font-size:11px; font-weight:700; }
+  .st-pending { color:#e0b34a; } .st-ok { color:#3ecf8e; } .st-no { color:#e9736f; }
+  .admin-row { display:flex; gap:10px; margin-top:10px; }
 </style>
 </head>
 <body>
@@ -90,17 +143,19 @@
     </div>
     <p class="sub">Республика Elbas · онлайн-банкинг</p>
     <p class="id-tag" id="myIdTag">ID: ...</p>
+    <div class="acct-row"><select id="acctSelect"></select><button id="acctNew">＋ Новый счёт</button></div>
   </div>
-
-  <div class="warn-banner">Симулятор. Валюта ELB вымышленная, данные хранятся только в этой вкладке браузера и сбрасываются при перезагрузке страницы.</div>
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="main">Главная</button>
+    <button class="tab-btn" data-tab="transfer">Перевод</button>
+    <button class="tab-btn" data-tab="funds" id="tabFunds">Сборы</button>
     <button class="tab-btn" data-tab="fines">Штрафы<span class="badge-count" id="fineBadge">0</span></button>
     <button class="tab-btn" data-tab="history">История</button>
     <button class="tab-btn" data-tab="docs">Документы</button>
     <button class="tab-btn" data-tab="chat">Чат-бот</button>
     <button class="tab-btn" data-tab="services">Услуги</button>
+    <button class="tab-btn" data-tab="admin" id="tabAdmin" style="display:none;">Админ</button>
   </div>
 
   <div class="tab-panel active" id="tab-main">
@@ -112,11 +167,46 @@
         <button id="withdraw">Снять средства</button>
       </div>
     </div>
+    <div class="card">
+      <p class="hist-title">Заявки на пополнение</p>
+      <p class="sub" style="margin-bottom:8px;">Лимит: до 30 000 ELB за заявку. Каждую заявку проверяет отделение.</p>
+      <div id="myApps"><p class="empty">Заявок пока нет</p></div>
+    </div>
     <div class="card fine-card">
       <div class="fine-title">⚠ Штраф</div>
       <p class="sub" style="margin-bottom:10px;">Просрочка операции — начисляется штраф.</p>
       <button id="fine" class="fine-btn">Применить штраф 50</button>
     </div>
+  </div>
+
+  <div class="tab-panel" id="tab-transfer">
+    <div class="card">
+      <p class="hist-title">Перевод на другой ID</p>
+      <p class="sub" style="margin-bottom:12px;" id="transferMode"></p>
+      <div class="field"><label>ID получателя</label><input id="sendToId" type="text" placeholder="EL-123456" autocomplete="off"></div>
+      <div class="field"><label>Сумма (ELB)</label><input id="sendAmount" type="number" min="1" step="1" placeholder="100"></div>
+      <div class="field"><label>Комментарий (необязательно)</label><input id="sendNote" type="text" maxlength="60" placeholder="За что перевод"></div>
+      <button id="sendBtn" style="width:100%;">Перевести</button>
+      <p class="sub" id="sendStatus" style="margin-top:10px;"></p>
+      <button id="sendReceipt" style="width:100%;display:none;margin-top:8px;">Открыть квитанцию</button>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-funds">
+    <div class="card">
+      <p class="hist-title">Фонд ополчения и социальных нужд</p>
+      <p class="sub">Сборы Республики Елбас. Пожертвовать можно любую сумму, средства ведутся в игровой валюте ELB.</p>
+    </div>
+    <div id="fundsList"></div>
+  </div>
+
+  <div class="tab-panel" id="tab-admin">
+    <div class="card">
+      <p class="hist-title">Заявки на пополнение</p>
+      <p class="sub" style="margin-bottom:10px;">Лимит: до 30 000 ELB за заявку. Одобрение зачисляет сумму на счёт клиента.</p>
+      <button id="adminRefresh" style="width:100%;">Обновить список</button>
+    </div>
+    <div id="adminList"></div>
   </div>
 
   <div class="tab-panel" id="tab-fines">
@@ -138,15 +228,19 @@
       <p class="hist-title">Документы</p>
       <div class="doc-item">
         <div class="doc-title">Справка о балансе счёта</div>
-        <div class="doc-sub">Формируется на текущую дату</div>
-        <button id="genCert" style="width:100%;">Сформировать</button>
+        <div class="doc-sub">Остаток, штрафы и последние операции на текущую дату</div>
+        <button data-doc="cert" style="width:100%;">Сформировать</button>
+      </div>
+      <div class="doc-item">
+        <div class="doc-title">Выписка по счёту</div>
+        <div class="doc-sub">Все операции с итогами по поступлениям и списаниям</div>
+        <button data-doc="statement" style="width:100%;">Сформировать</button>
       </div>
       <div class="doc-item">
         <div class="doc-title">Договор банковского обслуживания</div>
-        <div class="doc-sub">Типовой шаблон отделения Elbas Bank</div>
-        <button id="genContract" style="width:100%;">Открыть</button>
+        <div class="doc-sub">Типовой договор отделения Elbas Bank</div>
+        <button data-doc="contract" style="width:100%;">Сформировать</button>
       </div>
-      <div id="docOutput"></div>
     </div>
   </div>
 
@@ -155,10 +249,14 @@
       <p class="hist-title">Чат с поддержкой</p>
       <div class="chat-log" id="chatLog"></div>
       <div class="chat-quick">
-        <button data-q="баланс">Мой баланс</button>
-        <button data-q="штраф">Почему штраф?</button>
-        <button data-q="снятие">Как снять деньги?</button>
-        <button data-q="id">Мой ID</button>
+        <button data-q="мой баланс">Мой баланс</button>
+        <button data-q="мои штрафы">Мои штрафы</button>
+        <button data-q="последняя операция">Последняя операция</button>
+        <button data-q="как пополнить счёт">Как пополнить</button>
+        <button data-q="как снять деньги">Как снять</button>
+        <button data-q="как сделать перевод">Как перевести</button>
+        <button data-q="какие есть документы">Документы</button>
+        <button data-q="часы работы">Часы работы</button>
       </div>
       <div class="row">
         <input id="chatInput" placeholder="Напишите сообщение..." style="flex:1; padding:12px; border-radius:10px; border:1px solid #22322a; background:#0f1512; color:#eaf3ee;">
@@ -183,9 +281,25 @@
         <button id="btnNotary">Нотариальное заверение</button>
       </div>
     </div>
+    <div class="card">
+      <p class="hist-title">Справки и документы</p>
+      <p class="sub" style="margin-bottom:12px;">Документы оформляются отделением и сохраняются в PDF.</p>
+      <div class="row" style="margin-bottom:10px;">
+        <button data-svcdoc="requisites">Реквизиты счёта</button>
+        <button data-svcdoc="opening">Справка об открытии счёта</button>
+      </div>
+      <div class="row" style="margin-bottom:10px;">
+        <button data-svcdoc="fines">Справка о штрафах</button>
+        <button data-svcdoc="turnover">Справка об оборотах</button>
+      </div>
+      <div class="row">
+        <button data-svcdoc="closing">Заявление о закрытии счёта</button>
+      </div>
+    </div>
   </div>
 
-  <p class="simulator-tag">Симулятор Elbas Bank</p>
+  <p class="simulator-tag">Elbas Bank · игровая валюта ELB</p>
+  <p class="simulator-tag" id="adminLinkWrap" style="display:none; margin-top:6px;"><a href="#" id="adminLink" style="color:#4d5b52;">Служебный вход</a></p>
 </div>
 
 <div class="modal-overlay" id="modalOverlay">
@@ -211,25 +325,35 @@
 <div class="modal-overlay" id="depositOverlay">
   <div class="modal">
     <h3>Заявка на пополнение счёта</h3>
-    <p>Укажите цель зачисления средств — без этого заявка не будет принята к рассмотрению.</p>
-    <div class="field">
-      <label>Цель пополнения</label>
-      <select id="depositReason" style="width:100%; padding:12px 14px; border-radius:10px; border:1px solid #22322a; background:#0f1512; color:#eaf3ee; font-size:14px;">
+    <p>Лимит: до 30 000 ELB за одну заявку. Данные проверяет отделение, и только после одобрения сумма зачисляется на счёт. Не указывайте реальные банковские карты, паспорта и другие личные документы: ELB — игровая валюта.</p>
+    <div class="field"><label>Сумма (ELB, от 1 до 30 000)</label><input id="depAmount" type="number" min="1" max="30000" step="1" placeholder="1000"></div>
+    <div class="field"><label>Основание пополнения</label>
+      <select id="depBasis" style="width:100%; padding:12px 14px; border-radius:10px; border:1px solid #22322a; background:#0f1512; color:#eaf3ee; font-size:14px;">
         <option>Заработная плата</option>
+        <option>Награда за активность</option>
         <option>Возврат по договору</option>
         <option>Личные сбережения</option>
-        <option>Иное (потребует доп. проверки)</option>
-      </select>
-    </div>
-    <div class="field">
-      <label>Сумма (ELB)</label>
-      <input id="depositAmount" type="number" placeholder="100" min="1" value="100">
-    </div>
+        <option>Иное</option>
+      </select></div>
+    <div class="field"><label>Откуда средства (опишите, минимум 20 символов)</label>
+      <textarea id="depDesc" rows="3" maxlength="300" style="width:100%; padding:12px 14px; border-radius:10px; border:1px solid #22322a; background:#0f1512; color:#eaf3ee; font-size:14px; font-family:inherit; resize:vertical;"></textarea></div>
+    <div class="field"><label>Игровой ник или контакт для связи</label><input id="depContact" type="text" maxlength="40" placeholder="Например, ник в Discord"></div>
+    <label class="fund-anon"><input type="checkbox" id="depConfirm"> Подтверждаю, что данные достоверны</label>
+    <p class="sub" id="depError" style="color:#e9736f; margin:0 0 10px;"></p>
     <div class="confirm-row">
-      <button class="cancel" id="depositCancel">Отмена</button>
-      <button class="ok" id="depositSubmit">Подать заявку</button>
+      <button class="cancel" id="depCancel">Отмена</button>
+      <button class="ok" id="depSubmit">Отправить заявку</button>
     </div>
   </div>
+</div>
+
+<div class="doc-overlay" id="docOverlay">
+  <div class="doc-toolbar">
+    <button id="docClose">Закрыть</button>
+    <button id="docPrint" class="ok" style="border-color:#3ecf8e;color:#3ecf8e;">Сохранить PDF</button>
+  </div>
+  <div class="doc-hint">В окне печати выберите «Сохранить как PDF» (на телефоне: «Печать» → «Сохранить в PDF»).</div>
+  <div class="paper" id="docPaper"></div>
 </div>
 
 <script>
@@ -255,10 +379,212 @@ function fmt(n){ return n.toLocaleString('ru-RU') + ' ELB'; }
 function nowTime(){ return new Date().toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}); }
 function genId(){ return 'EL-' + Math.floor(100000 + Math.random()*900000); }
 
-function initAccount(){
-  myId = genId();
+// ---- Хранилище, счета и переводы ----
+// Чтобы переводы доходили между разными устройствами, укажите адрес базы Firebase Realtime Database,
+// например: 'https://ваш-проект-default-rtdb.firebaseio.com'. Пусто — переводы работают между счетами в этом браузере.
+const SHARED_DB_URL = '';
+const DB = SHARED_DB_URL.replace(/\/+$/, '');
+const ADMIN_CODE = '';        // код входа в админ-панель проверки заявок, например 'мой-секретный-код'; пусто — панель отключена
+const ADMIN_WEBHOOK_URL = ''; // необязательно: адрес Discord-вебхука, куда придут уведомления о новых заявках
+const DEPOSIT_LIMIT = 30000;  // максимум за одну заявку на пополнение
+const START_BONUS = 0;        // стартовый баланс нового аккаунта (0 — деньги появляются только через одобренные заявки)
+const MAX_APPS_PER_DAY = 3;   // не более заявок в сутки с одного счёта
+const mem = {};
+function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return (k in mem) ? mem[k] : null; } }
+function lsSet(k, v){ mem[k] = v; try { localStorage.setItem(k, v); } catch(e){} }
+function lsJson(k, def){ try { const v = lsGet(k); return v ? JSON.parse(v) : def; } catch(e){ return def; } }
+
+let seen = [];
+let opened = null;
+let lastTransfer = null;
+let transferBusy = false;
+
+const backend = DB ? {
+  async register(id){ await fetch(DB + '/registry/' + id + '.json', {method:'PUT', body:'true'}); },
+  async exists(id){ const r = await fetch(DB + '/registry/' + id + '.json'); return (await r.json()) === true; },
+  async push(toId, entry){ const r = await fetch(DB + '/inbox/' + toId + '.json', {method:'POST', body: JSON.stringify(entry)}); if (!r.ok) throw new Error('push failed'); },
+  async pull(id){
+    const r = await fetch(DB + '/inbox/' + id + '.json');
+    const data = await r.json();
+    if (!data) return [];
+    const out = [];
+    for (const key of Object.keys(data)) {
+      await fetch(DB + '/inbox/' + id + '/' + key + '.json', {method:'DELETE'});
+      out.push(data[key]);
+    }
+    return out;
+  }
+} : {
+  async register(id){ const reg = lsJson('elbas_registry', []); if (!reg.includes(id)) { reg.push(id); lsSet('elbas_registry', JSON.stringify(reg)); } },
+  async exists(id){ return lsJson('elbas_registry', []).includes(id); },
+  async push(toId, entry){ const k = 'elbas_inbox_' + toId; const a = lsJson(k, []); a.push(entry); lsSet(k, JSON.stringify(a)); },
+  async pull(id){ const k = 'elbas_inbox_' + id; const a = lsJson(k, []); if (a.length) lsSet(k, '[]'); return a; }
+};
+
+function persist(){
+  if (!myId) return;
+  lsSet('elbas_acc_' + myId, JSON.stringify({balance, history: txnHistory.slice(0,200), fines: fines.slice(0,200), seen: seen.slice(0,200), opened}));
+}
+function loadAccount(id, startBalance){
+  const d = lsJson('elbas_acc_' + id, null);
+  if (d) { balance = d.balance; txnHistory = d.history || []; fines = d.fines || []; seen = d.seen || []; opened = d.opened || new Date().toISOString(); }
+  else { balance = startBalance; txnHistory = []; fines = []; seen = []; opened = new Date().toISOString(); }
+}
+function myAccounts(){ return lsJson('elbas_mine', []); }
+
+async function freshId(){
+  for (let i = 0; i < 8; i++) {
+    const id = genId();
+    let taken = false;
+    try { taken = await backend.exists(id); } catch(e){}
+    if (!taken && !myAccounts().includes(id)) return id;
+  }
+  return genId();
+}
+function renderAccountSelect(){
+  const sel = document.getElementById('acctSelect');
+  sel.innerHTML = myAccounts().map(id => '<option value="' + id + '"' + (id === myId ? ' selected' : '') + '>' + id + '</option>').join('');
   document.getElementById('myIdTag').textContent = 'ID: ' + myId;
-  renderBalance(); renderHistory(); renderFines();
+}
+function renderAll(){ renderAccountSelect(); renderBalance(); renderHistory(); renderFines(); }
+
+async function createAccount(){
+  persist();
+  const id = await freshId();
+  const mine = myAccounts(); mine.push(id);
+  lsSet('elbas_mine', JSON.stringify(mine));
+  myId = id; lsSet('elbas_me', id);
+  loadAccount(id, 0);
+  try { await backend.register(id); } catch(e){}
+  persist(); renderAll();
+}
+async function switchAccount(id){
+  if (id === myId) return;
+  persist();
+  myId = id; lsSet('elbas_me', id);
+  loadAccount(id, 0);
+  renderAll();
+  checkInbox();
+  refreshApps();
+}
+
+async function checkInbox(){
+  if (!myId) return;
+  let entries;
+  try { entries = await backend.pull(myId); } catch(e){ return; }
+  if (!entries || !entries.length) return;
+  let changed = false;
+  entries.forEach(en => {
+    if (!en || typeof en.tid !== 'string' || seen.includes(en.tid)) return;
+    const amount = Math.floor(Number(en.amount));
+    if (!(amount > 0) || amount > 1000000000) return;
+    if (en.kind === 'deposit') {
+      if (amount > DEPOSIT_LIMIT) return;
+      const num = /^[A-Za-zА-Яа-я0-9-]{3,20}$/.test(String(en.appNum)) ? en.appNum : '';
+      seen.unshift(en.tid);
+      txnHistory.unshift({label: 'Пополнение по заявке ' + num, amount, time: nowTime()});
+      balance += amount; changed = true;
+      return;
+    }
+    const from = /^EL-\d{6}$/.test(String(en.from)) ? en.from : 'неизвестного счёта';
+    const note = en.note ? String(en.note).slice(0, 60) : '';
+    seen.unshift(en.tid);
+    txnHistory.unshift({label: 'Перевод от ' + from + (note ? ' — ' + note : ''), amount, time: nowTime()});
+    balance += amount;
+    changed = true;
+  });
+  seen = seen.slice(0, 200);
+  if (changed) { persist(); renderBalance(); renderHistory(); }
+}
+
+function normId(v){
+  v = String(v).trim().toUpperCase().replace(/\s+/g, '');
+  if (/^\d{6}$/.test(v)) v = 'EL-' + v;
+  return v;
+}
+async function executeTransfer(toId, amount, note){
+  if (amount > balance) return {ok:false, msg:'Недостаточно средств.'};
+  const entry = {tid: myId + '-' + Date.now() + '-' + Math.floor(Math.random()*1e6), from: myId, amount, note, ts: Date.now()};
+  try { await backend.push(toId, entry); } catch(e){ return {ok:false, msg:'Нет связи с сервером. Деньги не списаны.'}; }
+  addTransaction('Перевод на ' + toId + (note ? ' — ' + note : ''), -amount);
+  lastTransfer = {from: myId, to: toId, amount, note, when: new Date().toLocaleString('ru-RU'), num: docNumber('ПР', 7)};
+  return {ok:true};
+}
+function buildReceipt(t){
+  return paper('Квитанция о переводе', t.num,
+    '<p>Операция по переводу средств выполнена в Elbas Bank.</p>'
+    + '<div class="kv"><span>Отправитель</span><b>' + esc(t.from) + '</b></div>'
+    + '<div class="kv"><span>Получатель</span><b>' + esc(t.to) + '</b></div>'
+    + '<div class="kv"><span>Комментарий</span><b>' + (t.note ? esc(t.note) : '—') + '</b></div>'
+    + '<div class="kv"><span>Дата и время</span><b>' + esc(t.when) + '</b></div>'
+    + '<div class="kv"><span>Статус</span><b>Исполнено</b></div>'
+    + '<div class="kv" style="border:none;margin-top:6px;"><span>Сумма перевода</span><span class="big">' + fmt(t.amount) + '</span></div>');
+}
+
+document.getElementById('transferMode').textContent = DB
+  ? 'Переводы доходят на любые устройства: введите ID получателя и сумму.'
+  : 'Переводы работают между счетами в этом браузере. Чтобы переводить на другие устройства, нужен общий сервер.';
+
+document.getElementById('sendBtn').addEventListener('click', async () => {
+  const status = document.getElementById('sendStatus');
+  const recBtn = document.getElementById('sendReceipt');
+  recBtn.style.display = 'none';
+  if (transferBusy) return;
+  const toId = normId(document.getElementById('sendToId').value);
+  const amount = Number(document.getElementById('sendAmount').value);
+  const note = document.getElementById('sendNote').value.trim().slice(0, 60);
+  if (!/^EL-\d{6}$/.test(toId)) { status.textContent = 'Введите ID в формате EL-123456.'; return; }
+  if (toId === myId) { status.textContent = 'Нельзя перевести средства самому себе.'; return; }
+  if (!Number.isInteger(amount) || amount < 1) { status.textContent = 'Укажите сумму — целое число ELB.'; return; }
+  if (amount > balance) { status.textContent = 'Недостаточно средств. Доступно: ' + fmt(balance) + '.'; return; }
+  status.textContent = 'Проверка реквизитов...';
+  let found;
+  try { found = await backend.exists(toId); } catch(e){ status.textContent = 'Нет связи с сервером. Попробуйте позже.'; return; }
+  if (!found) { status.textContent = 'Счёт ' + toId + ' не найден.'; return; }
+  status.textContent = '';
+  askConfirm('Перевод', 'Перевести ' + fmt(amount) + ' на счёт ' + toId + '?', () => {
+    transferBusy = true;
+    setModal('Перевод средств', 'Реквизиты проверяются, после чего сумма зачисляется получателю.');
+    runSteps(['Проверка реквизитов', 'Зачисление на счёт получателя'], async () => {
+      const res = await executeTransfer(toId, amount, note);
+      transferBusy = false;
+      if (res.ok) {
+        status.textContent = 'Переведено ' + fmt(amount) + ' на счёт ' + toId + '.';
+        recBtn.style.display = 'block';
+        document.getElementById('sendAmount').value = '';
+        document.getElementById('sendNote').value = '';
+      } else {
+        status.textContent = res.msg;
+        document.getElementById('modalDesc').textContent = res.msg;
+      }
+    });
+  });
+});
+document.getElementById('sendReceipt').addEventListener('click', () => { if (lastTransfer) openDoc(buildReceipt(lastTransfer)); });
+document.getElementById('acctNew').addEventListener('click', createAccount);
+document.getElementById('acctSelect').addEventListener('change', e => switchAccount(e.target.value));
+
+async function initAccount(){
+  const me = lsGet('elbas_me');
+  const mine = myAccounts();
+  if (me && mine.includes(me)) {
+    myId = me;
+    loadAccount(me, START_BONUS);
+  } else {
+    myId = await freshId();
+    mine.push(myId);
+    lsSet('elbas_mine', JSON.stringify(mine));
+    lsSet('elbas_me', myId);
+    loadAccount(myId, START_BONUS);
+  }
+  persist();
+  renderAll();
+  backend.register(myId).catch(() => {});
+  checkInbox();
+  refreshApps();
+  setInterval(checkInbox, 5000);
+  setInterval(refreshApps, 8000);
+  window.addEventListener('focus', checkInbox);
 }
 
 function renderBalance(){
@@ -270,7 +596,7 @@ function renderHistory(){
   historyEl.innerHTML = txnHistory.map(h => {
     const cls = h.amount < 0 ? 'neg' : 'pos';
     const sign = h.amount > 0 ? '+' : '';
-    return '<div class="hist-item"><div><div>'+h.label+'</div><div class="meta">'+h.time+'</div></div><span class="'+cls+'">'+sign+h.amount+' ELB</span></div>';
+    return '<div class="hist-item"><div><div>'+esc(h.label)+'</div><div class="meta">'+h.time+'</div></div><span class="'+cls+'">'+sign+h.amount+' ELB</span></div>';
   }).join('');
 }
 const fineReasons = ['Просрочка платежа по счёту','Несвоевременное обновление данных','Нарушение регламента отделения','Задержка предоставления справки','Несоответствие формы заявления','Опоздание на приём к сотруднику','Неполный пакет документов'];
@@ -282,42 +608,16 @@ function renderFines(){
 function addTransaction(label, amount){
   txnHistory.unshift({label, amount, time: nowTime()});
   balance += amount;
+  persist();
   renderBalance(); renderHistory();
 }
-function addFine(amount){
-  const reason = fineReasons[Math.floor(Math.random()*fineReasons.length)];
+function addFine(amount, customReason){
+  const reason = customReason || fineReasons[Math.floor(Math.random()*fineReasons.length)];
   fines.unshift({amount, reason, time: nowTime()});
   renderFines();
-  addTransaction('Штраф: ' + reason, -amount);
+  if (amount > 0) addTransaction('Штраф: ' + reason, -amount); else persist();
 }
 
-document.getElementById('deposit').addEventListener('click', () => {
-  document.getElementById('depositOverlay').classList.add('open');
-});
-document.getElementById('depositCancel').addEventListener('click', () => {
-  document.getElementById('depositOverlay').classList.remove('open');
-});
-document.getElementById('depositSubmit').addEventListener('click', () => {
-  const reason = document.getElementById('depositReason').value;
-  const amount = parseInt(document.getElementById('depositAmount').value, 10) || 100;
-  document.getElementById('depositOverlay').classList.remove('open');
-
-  const steps = ['Регистрация заявления', 'Проверка источника средств', 'Проверка лимита зачисления'];
-  if (reason === 'Иное (потребует доп. проверки)') {
-    steps.push('Дополнительная проверка комплаенс-отделом', 'Запрос обоснования');
-  }
-  steps.push('Согласование с руководителем отделения', 'Итоговое решение');
-
-  runSteps(steps, () => {
-    const rejected = Math.random() < 0.3;
-    if (rejected) {
-      addFine(0, 'Заявка на пополнение отклонена — несоответствие формы. Подайте заявку повторно.');
-      document.getElementById('modalDesc').textContent = 'Заявка отклонена комиссией. Средства не зачислены — попробуйте подать заявку заново.';
-    } else {
-      addTransaction('Пополнение (' + reason + ')', amount);
-    }
-  });
-});
 document.getElementById('fine').addEventListener('click', () => addFine(50));
 
 function askConfirm(title, desc, onYes){
@@ -328,6 +628,7 @@ function askConfirm(title, desc, onYes){
 }
 confirmCancel.addEventListener('click', () => confirmOverlay.classList.remove('open'));
 
+function setModal(t, d){ document.getElementById('modalTitle').textContent = t; document.getElementById('modalDesc').textContent = d; }
 function runSteps(steps, onDone){
   overlay.classList.add('open'); modalClose.disabled = true; modalClose.textContent = 'Ожидайте...';
   stepList.innerHTML = steps.map((s,i) => '<li id="step'+i+'">'+s+'</li>').join('');
@@ -343,13 +644,14 @@ modalClose.addEventListener('click', () => overlay.classList.remove('open'));
 
 document.getElementById('withdraw').addEventListener('click', () => {
   askConfirm('Снять средства', 'Запросить снятие 100 ELB со счёта?', () => {
+    setModal('Оформление снятия средств', 'Заявка проходит согласование в нескольких инстанциях отделения.');
     runSteps(['Проверка заявления','Согласование с отделом контроля','Подтверждение личности','Одобрение руководителя','Зачисление средств'],
       () => addTransaction('Снятие (после согласования)', -100));
   });
 });
 
 function serviceAction(title, desc, steps){
-  askConfirm(title, 'Начать процедуру: «' + desc + '»?', () => { runSteps(steps, () => {}); });
+  askConfirm(title, 'Начать процедуру: «' + desc + '»?', () => { setModal(title, desc + '.'); runSteps(steps, () => {}); });
 }
 document.getElementById('btnStamp').addEventListener('click', () => serviceAction('Заверение печатью','Документ передаётся в архивный отдел',['Передача в архив','Поиск печати','Проставление оттиска']));
 document.getElementById('btnQueue').addEventListener('click', () => serviceAction('Электронная очередь','Резервирование времени приёма',['Поиск окна','Резервирование','Формирование талона']));
@@ -357,6 +659,76 @@ document.getElementById('btnStatus').addEventListener('click', () => serviceActi
 document.getElementById('btnAppeal').addEventListener('click', () => serviceAction('Обжалование штрафа','Подача апелляции',['Регистрация','Рассмотрение','Решение']));
 document.getElementById('btnManager').addEventListener('click', () => serviceAction('Приём у управляющего','Запись на приём',['Проверка расписания','Согласование времени','Подтверждение']));
 document.getElementById('btnNotary').addEventListener('click', () => serviceAction('Нотариальное заверение','Заверение документа',['Передача','Проверка','Удостоверительная надпись']));
+
+// --- Справки и документы в «Услугах» ---
+function kv(a, b){ return '<div class="kv"><span>' + a + '</span><b>' + b + '</b></div>'; }
+function dateOnly(iso){ return new Date(iso).toLocaleDateString('ru-RU', {day:'numeric', month:'long', year:'numeric'}); }
+
+function buildRequisites(){
+  return paper('Реквизиты счёта', docNumber('РК', 6),
+    '<p>Реквизиты для зачисления переводов ELB на счёт клиента.</p>'
+    + kv('Получатель', 'Держатель счёта ' + esc(myId))
+    + kv('Номер счёта (ID)', esc(myId))
+    + kv('Валюта счёта', 'ELB (игровая валюта)')
+    + kv('Банк', 'Elbas Bank')
+    + kv('Отделение', 'Центральное, г. Эльбасград')
+    + '<p style="margin-top:12px;">Для получения перевода сообщите отправителю номер счёта (ID). Комментарий к переводу указывается по желанию.</p>');
+}
+function buildOpening(){
+  return paper('Справка об открытии счёта', docNumber('СО', 6),
+    '<p>Настоящим Elbas Bank подтверждает, что на имя держателя <b>' + esc(myId) + '</b> открыт и ведётся счёт в игровой валюте ELB.</p>'
+    + kv('Номер счёта', esc(myId))
+    + kv('Дата открытия', esc(dateOnly(opened)))
+    + kv('Валюта счёта', 'ELB')
+    + kv('Статус счёта', 'Действующий')
+    + '<p style="margin-top:12px;">Справка выдана по месту требования.</p>');
+}
+function buildFinesCert(){
+  const total = fines.reduce((a, f) => a + f.amount, 0);
+  const text = fines.length
+    ? 'по состоянию на ' + longDate() + ' по счёту числятся штрафы в количестве <b>' + fines.length + '</b> на общую сумму <b>' + total + ' ELB</b>.'
+    : 'по состоянию на ' + longDate() + ' штрафы по счёту <b>отсутствуют</b>.';
+  const rows = fines.slice(0, 10).map(f => '<tr><td>' + esc(f.time) + '</td><td>' + esc(f.reason) + '</td><td class="r">' + f.amount + ' ELB</td></tr>').join('');
+  return paper('Справка о штрафах', docNumber('СШ', 6),
+    '<p>Elbas Bank сообщает, что ' + text + '</p>'
+    + (rows ? '<table><tr><th>Время</th><th>Основание</th><th class="r">Сумма</th></tr>' + rows + '</table>' : '')
+    + kv('Счёт', esc(myId)));
+}
+function buildTurnover(){
+  let inc = 0, out = 0;
+  txnHistory.forEach(h => { if (h.amount > 0) inc += h.amount; else out += -h.amount; });
+  return paper('Справка об оборотах по счёту', docNumber('СБ', 6),
+    '<p>Elbas Bank подтверждает следующие обороты по счёту <b>' + esc(myId) + '</b> с даты открытия (' + esc(dateOnly(opened)) + ') по ' + longDate() + '</p>'
+    + kv('Количество операций', String(txnHistory.length))
+    + kv('Поступления', '+' + inc + ' ELB')
+    + kv('Списания', '−' + out + ' ELB')
+    + '<div class="kv" style="border:none;margin-top:6px;"><span>Остаток на счёте</span><span class="big">' + fmt(balance) + '</span></div>');
+}
+function buildClosing(){
+  const clientSign = '<div class="sig-block"><div class="sig-line"><span class="sig-scrawl">' + esc(myId) + '</span></div><div class="sig-cap">Подпись клиента, счёт ' + esc(myId) + '</div></div>';
+  return paper('Заявление о закрытии счёта', docNumber('ЗЗ', 6),
+    '<p style="text-align:right;">Управляющему Центральным отделением Elbas Bank<br>от держателя счёта <b>' + esc(myId) + '</b></p>'
+    + '<p>Прошу закрыть мой счёт <b>' + esc(myId) + '</b> в валюте ELB. Остаток на дату подачи заявления: <b>' + fmt(balance) + '</b>.</p>'
+    + '<p>С условиями закрытия счёта и порядком рассмотрения заявлений ознакомлен(а). Заявление носит шаблонный характер и самостоятельно счёт не закрывает.</p>'
+    + '<p>Дата подачи: ' + longDate() + '</p>',
+    clientSign);
+}
+function serviceDoc(title, desc, steps, build){
+  askConfirm(title, 'Оформить документ: «' + desc + '»?', () => {
+    setModal(title, desc + '.');
+    runSteps(steps, () => { overlay.classList.remove('open'); openDoc(build()); });
+  });
+}
+document.querySelectorAll('[data-svcdoc]').forEach(b => {
+  b.addEventListener('click', () => {
+    const t = b.dataset.svcdoc;
+    if (t === 'requisites') serviceDoc('Реквизиты счёта', 'Формирование реквизитов для переводов', ['Регистрация запроса', 'Сверка данных клиента', 'Подпись и печать'], buildRequisites);
+    if (t === 'opening') serviceDoc('Справка об открытии счёта', 'Подтверждение факта открытия счёта', ['Регистрация запроса', 'Поиск записи в журнале', 'Подпись и печать'], buildOpening);
+    if (t === 'fines') serviceDoc('Справка о штрафах', 'Сведения о штрафах по счёту', ['Регистрация запроса', 'Запрос в отдел контроля', 'Подпись и печать'], buildFinesCert);
+    if (t === 'turnover') serviceDoc('Справка об оборотах', 'Расчёт поступлений и списаний', ['Регистрация запроса', 'Сверка операций с журналом', 'Расчёт итогов', 'Подпись и печать'], buildTurnover);
+    if (t === 'closing') serviceDoc('Заявление о закрытии счёта', 'Бланк заявления на имя управляющего', ['Регистрация запроса', 'Подготовка бланка', 'Проставление печати'], buildClosing);
+  });
+});
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -367,50 +739,478 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
-// --- Документы ---
-document.getElementById('genCert').addEventListener('click', () => {
-  const out = document.getElementById('docOutput');
-  out.innerHTML = '<div class="doc-item"><div class="doc-title">Справка о балансе</div><div class="doc-sub">' + new Date().toLocaleDateString('ru-RU') + '</div><p class="sub">Счёт ' + myId + ' · Остаток: ' + fmt(balance) + '<br>Настоящая справка сформирована в симуляторе Elbas Bank и не имеет юридической силы.</p></div>' + out.innerHTML;
+// --- Документы (PDF через печать браузера) ---
+const docOverlay = document.getElementById('docOverlay');
+const docPaper = document.getElementById('docPaper');
+const EAGLE_PATH = 'M50 8c-2 0-3 2-3 4v3c-6 1-10 5-10 9 0-2-3-3-5-2-1 3 1 6 3 7-4 2-6 6-6 6l6 1c-3 3-5 8-5 8l6-1c-2 4-2 9-2 9l5-2c0 4 2 8 2 8l4-3c1 3 3 6 5 6 2 0 4-3 5-6l4 3s2-4 2-8l5 2s0-5-2-9l6 1s-2-5-5-8l6-1s-2-4-6-6c2-1 4-4 3-7-2-1-5 0-5 2 0-4-4-8-10-9v-3c0-2-1-4-3-4z';
+const STAMP_SVG = '<svg viewBox="0 0 120 120" width="108" height="108" style="transform:rotate(-8deg);opacity:.9"><defs><path id="stampCircle" d="M60,60 m-45,0 a45,45 0 1,1 90,0 a45,45 0 1,1 -90,0"/></defs><circle cx="60" cy="60" r="57" fill="none" stroke="#1a6b45" stroke-width="2.5"/><circle cx="60" cy="60" r="36" fill="none" stroke="#1a6b45" stroke-width="1.2"/><text font-size="10" font-weight="700" fill="#1a6b45" letter-spacing="1.6" font-family="Arial,sans-serif"><textPath href="#stampCircle">ELBAS BANK · ЦЕНТРАЛЬНОЕ ОТДЕЛЕНИЕ · </textPath></text><g transform="translate(40,38) scale(.4)" fill="#1a6b45"><path d="' + EAGLE_PATH + '"/></g></svg>';
+
+function esc(t){ return String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function longDate(){ return new Date().toLocaleDateString('ru-RU', {day:'numeric', month:'long', year:'numeric'}); }
+function docNumber(prefix, digits){ return prefix + '-' + Math.floor(Math.pow(10,digits-1) + Math.random()*9*Math.pow(10,digits-1)); }
+
+function paper(title, number, inner, extraSign){
+  return '<div class="paper-head"><svg viewBox="0 0 100 100" width="48" height="48" fill="#1a6b45"><path d="' + EAGLE_PATH + '"/></svg>'
+    + '<div><div class="paper-state">РЕСПУБЛИКА ELBAS</div><div class="paper-bank">ELBAS BANK</div><div class="paper-addr">Центральное отделение · г. Эльбасград</div></div></div>'
+    + '<div class="paper-title">' + title + '</div>'
+    + '<div class="paper-num">№ ' + number + ' от ' + longDate() + '</div>'
+    + inner
+    + '<div class="paper-sign">' + (extraSign || '') + '<div class="sig-block"><div class="sig-line"><span class="sig-scrawl">К. Ельбасов</span></div><div class="sig-cap">Управляющий Центральным отделением</div></div>' + STAMP_SVG + '</div>'
+    + '<div class="paper-foot">Elbas Bank · игровая валюта ELB · документ действителен в пределах сообщества</div>';
+}
+
+function buildCert(){
+  const totalFines = fines.reduce((a,f) => a + f.amount, 0);
+  const rows = txnHistory.slice(0,5).map(h => '<tr><td>' + esc(h.time) + '</td><td>' + esc(h.label) + '</td><td class="r">' + (h.amount>0?'+':'') + h.amount + ' ELB</td></tr>').join('')
+    || '<tr><td colspan="3">Операций по счёту не проводилось</td></tr>';
+  return paper('Справка о состоянии счёта', docNumber('СП', 6),
+    '<p>Настоящая справка выдана держателю счёта <b>' + esc(myId) + '</b> в подтверждение того, что по состоянию на ' + longDate() + ' в Elbas Bank открыт и действует счёт, имеющий следующее состояние:</p>'
+    + '<div class="kv"><span>Номер счёта</span><b>' + esc(myId) + '</b></div>'
+    + '<div class="kv"><span>Валюта счёта</span><b>ELB (игровая валюта)</b></div>'
+    + '<div class="kv"><span>Статус счёта</span><b>Активен</b></div>'
+    + '<div class="kv"><span>Начислено штрафов</span><b>' + fines.length + ' на сумму ' + totalFines + ' ELB</b></div>'
+    + '<div class="kv" style="border:none;margin-top:6px;"><span>Доступный остаток</span><span class="big">' + fmt(balance) + '</span></div>'
+    + '<h4>Последние операции</h4>'
+    + '<table><tr><th>Время</th><th>Операция</th><th class="r">Сумма</th></tr>' + rows + '</table>'
+    + '<p>Справка выдана для предъявления по месту требования в пределах сообщества.</p>');
+}
+
+function buildStatement(){
+  let inc = 0, out = 0;
+  txnHistory.forEach(h => { if (h.amount > 0) inc += h.amount; else out += -h.amount; });
+  const rows = txnHistory.slice(0,40).map((h,i) => '<tr><td>' + (txnHistory.length - i) + '</td><td>' + esc(h.time) + '</td><td>' + esc(h.label) + '</td><td class="r">' + (h.amount>0?'+':'') + h.amount + '</td></tr>').join('')
+    || '<tr><td colspan="4">Операций по счёту не проводилось</td></tr>';
+  return paper('Выписка по счёту', docNumber('ВП', 6),
+    '<p>Выписка по счёту <b>' + esc(myId) + '</b> (валюта ELB) по состоянию на ' + longDate() + '.</p>'
+    + '<table><tr><th>№</th><th>Время</th><th>Описание операции</th><th class="r">Сумма, ELB</th></tr>' + rows + '</table>'
+    + '<div class="kv"><span>Всего поступлений</span><b>+' + inc + ' ELB</b></div>'
+    + '<div class="kv"><span>Всего списаний</span><b>−' + out + ' ELB</b></div>'
+    + '<div class="kv" style="border:none;margin-top:6px;"><span>Остаток на конец периода</span><span class="big">' + fmt(balance) + '</span></div>');
+}
+
+function buildContract(){
+  const clauses = [
+    ['1. Предмет договора', '1.1. Банк открывает Клиенту счёт в игровой валюте ELB и осуществляет его обслуживание в соответствии с настоящим договором и регламентом отделения.<br>1.2. Валюта ELB является внутренней единицей учёта сообщества и не является платёжным средством за его пределами.'],
+    ['2. Права и обязанности Банка', '2.1. Банк обязуется зачислять средства на счёт и отражать операции в истории счёта.<br>2.2. Банк вправе запрашивать у Клиента сведения об источнике средств и обоснование операций.<br>2.3. Банк вправе отклонить заявку при несоответствии её формы установленным требованиям.'],
+    ['3. Права и обязанности Клиента', '3.1. Клиент обязуется предоставлять достоверные сведения и соблюдать регламент отделения.<br>3.2. Клиент вправе подавать заявки на пополнение и снятие средств, обращаться за справками и выписками.'],
+    ['4. Порядок проведения операций', '4.1. Заявки на пополнение и снятие рассматриваются в порядке очереди и проходят этапы проверки, согласования и итогового решения.<br>4.2. Срок рассмотрения зависит от загруженности отделения и сложности заявки.'],
+    ['5. Штрафы', '5.1. За нарушение регламента отделения, просрочку операций и неполный пакет документов Банк вправе начислять штрафы.<br>5.2. Клиент вправе обжаловать штраф в комиссии отделения через раздел «Услуги».'],
+    ['6. Ответственность сторон', '6.1. Стороны несут ответственность в пределах правил сообщества.<br>6.2. Банк не отвечает за операции, совершённые третьими лицами с ведома Клиента.'],
+    ['7. Конфиденциальность', '7.1. Банк не раскрывает сведения о счёте Клиента третьим лицам без его согласия, кроме случаев, предусмотренных правилами сообщества.'],
+    ['8. Срок действия и расторжение', '8.1. Договор вступает в силу с даты подписания и действует бессрочно.<br>8.2. Любая из сторон вправе расторгнуть договор, уведомив другую сторону.']
+  ];
+  const body = clauses.map(c => '<h4>' + c[0] + '</h4><p>' + c[1] + '</p>').join('');
+  const clientSign = '<div class="sig-block"><div class="sig-line"><span class="sig-scrawl">' + esc(myId) + '</span></div><div class="sig-cap">Клиент, держатель счёта ' + esc(myId) + '</div></div>';
+  return paper('Договор банковского обслуживания', docNumber('ДО', 5),
+    '<p>Elbas Bank, именуемый далее «Банк», в лице Управляющего Центрального отделения К. Ельбасова, и держатель счёта <b>' + esc(myId) + '</b>, именуемый далее «Клиент», заключили настоящий договор о нижеследующем.</p>' + body,
+    clientSign);
+}
+
+function openDoc(html){
+  docPaper.innerHTML = html;
+  docOverlay.classList.add('open');
+  docOverlay.scrollTop = 0;
+}
+document.querySelectorAll('[data-doc]').forEach(b => {
+  b.addEventListener('click', () => {
+    const t = b.dataset.doc;
+    openDoc(t === 'cert' ? buildCert() : t === 'statement' ? buildStatement() : buildContract());
+  });
 });
-document.getElementById('genContract').addEventListener('click', () => {
-  const out = document.getElementById('docOutput');
-  out.innerHTML = '<div class="doc-item"><div class="doc-title">Договор обслуживания №' + Math.floor(Math.random()*90000+10000) + '</div><div class="doc-sub">Типовой шаблон</div><p class="sub">Клиент: держатель счёта ' + myId + '. Банк обязуется вести учёт вымышленной валюты ELB. Документ учебный, юридической силы не имеет.</p></div>' + out.innerHTML;
+document.getElementById('docClose').addEventListener('click', () => docOverlay.classList.remove('open'));
+document.getElementById('docPrint').addEventListener('click', () => window.print());
+
+// --- Сборы: народное ополчение и социальные нужды ---
+const CAMPAIGNS = [
+  { id:'militia', title:'Народное ополчение Елбаса', desc:'Сбор на нужды народного ополчения Республики Елбас: снаряжение, связь и обеспечение добровольцев.', goal:100000 },
+  { id:'social', title:'Социальные нужды', desc:'Поддержка пожилых граждан, многодетных семей и жителей, оказавшихся в трудной ситуации.', goal:50000 }
+];
+Object.assign(backend, DB ? {
+  async fundList(cid){ const r = await fetch(DB + '/funds/' + cid + '.json'); const d = await r.json(); return d ? Object.values(d) : []; },
+  async fundAdd(cid, entry){ const r = await fetch(DB + '/funds/' + cid + '.json', {method:'POST', body: JSON.stringify(entry)}); if (!r.ok) throw new Error('fund failed'); }
+} : {
+  async fundList(cid){ return lsJson('elbas_fund_' + cid, []); },
+  async fundAdd(cid, entry){ const a = lsJson('elbas_fund_' + cid, []); a.push(entry); lsSet('elbas_fund_' + cid, JSON.stringify(a)); }
+});
+
+let fundBusy = false;
+let lastDonation = null;
+function maskId(id){ return String(id).replace(/^(EL-\d{2})\d{2}(\d{2})$/, '$1••$2'); }
+
+function initFunds(){
+  document.getElementById('fundsList').innerHTML = CAMPAIGNS.map(c =>
+    '<div class="card">'
+    + '<p class="hist-title">' + esc(c.title) + '</p>'
+    + '<p class="sub">' + esc(c.desc) + '</p>'
+    + '<div class="fund-bar"><div class="fund-fill" id="fundFill_' + c.id + '"></div></div>'
+    + '<div class="fund-meta"><span>Собрано: <b id="fundTotal_' + c.id + '">0 ELB</b></span><span>Цель: ' + fmt(c.goal) + '</span></div>'
+    + '<div class="field"><label>Сумма пожертвования (ELB)</label><input id="fundAmt_' + c.id + '" type="number" min="1" step="1" placeholder="100"></div>'
+    + '<div class="field"><label>Комментарий (необязательно)</label><input id="fundNote_' + c.id + '" type="text" maxlength="60" placeholder="Пожелание"></div>'
+    + '<label class="fund-anon"><input type="checkbox" id="fundAnon_' + c.id + '"> Пожертвовать анонимно</label>'
+    + '<button id="fundBtn_' + c.id + '" style="width:100%;">Пожертвовать</button>'
+    + '<p class="sub" id="fundStatus_' + c.id + '" style="margin-top:10px;"></p>'
+    + '<button id="fundReceipt_' + c.id + '" style="display:none;width:100%;margin-top:8px;">Открыть квитанцию</button>'
+    + '<p class="hist-title" style="margin-top:14px;">Последние пожертвования</p>'
+    + '<div id="fundDonors_' + c.id + '"><p class="empty">Пожертвований пока нет</p></div>'
+    + '</div>'
+  ).join('');
+  CAMPAIGNS.forEach(c => {
+    document.getElementById('fundBtn_' + c.id).addEventListener('click', () => donate(c));
+    document.getElementById('fundReceipt_' + c.id).addEventListener('click', () => { if (lastDonation && lastDonation.cid === c.id) openDoc(buildDonationReceipt(lastDonation)); });
+  });
+}
+
+async function refreshFunds(){
+  for (const c of CAMPAIGNS) {
+    let list = [];
+    try { list = await backend.fundList(c.id); } catch(e){ continue; }
+    const clean = (list || []).filter(e => e && Number(e.amount) > 0 && Number(e.amount) <= 1000000000)
+      .map(e => ({name: String(e.name || 'Аноним').slice(0, 20), amount: Math.floor(Number(e.amount)), note: e.note ? String(e.note).slice(0, 60) : '', ts: Number(e.ts) || 0}));
+    const total = clean.reduce((a, e) => a + e.amount, 0);
+    const pct = Math.min(100, Math.round(total / c.goal * 100));
+    document.getElementById('fundFill_' + c.id).style.width = pct + '%';
+    document.getElementById('fundTotal_' + c.id).textContent = fmt(total) + ' (' + pct + '%)';
+    const recent = clean.sort((a, b) => b.ts - a.ts).slice(0, 8);
+    document.getElementById('fundDonors_' + c.id).innerHTML = recent.length
+      ? recent.map(e => '<div class="hist-item"><div><div>' + esc(e.name) + '</div><div class="meta">' + (e.note ? esc(e.note) + ' · ' : '') + new Date(e.ts).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) + '</div></div><span class="pos">+' + e.amount + ' ELB</span></div>').join('')
+      : '<p class="empty">Пожертвований пока нет</p>';
+  }
+}
+
+function buildDonationReceipt(d){
+  return paper('Квитанция о пожертвовании', d.num,
+    '<p>Elbas Bank подтверждает, что средства клиента приняты в фонд сбора «' + esc(d.title) + '».</p>'
+    + kv('Плательщик (счёт)', esc(d.from))
+    + kv('Сбор', esc(d.title))
+    + kv('Комментарий', d.note ? esc(d.note) : '—')
+    + kv('Дата и время', esc(d.when))
+    + kv('Статус', 'Принято')
+    + '<div class="kv" style="border:none;margin-top:6px;"><span>Сумма пожертвования</span><span class="big">' + fmt(d.amount) + '</span></div>'
+    + '<p style="margin-top:12px;">Благодарим за участие и поддержку жителей Республики Елбас.</p>');
+}
+
+function donate(c){
+  if (fundBusy) return;
+  const status = document.getElementById('fundStatus_' + c.id);
+  const recBtn = document.getElementById('fundReceipt_' + c.id);
+  recBtn.style.display = 'none';
+  const amount = Number(document.getElementById('fundAmt_' + c.id).value);
+  const note = document.getElementById('fundNote_' + c.id).value.trim().slice(0, 60);
+  const anon = document.getElementById('fundAnon_' + c.id).checked;
+  if (!Number.isInteger(amount) || amount < 1) { status.textContent = 'Укажите сумму — целое число ELB.'; return; }
+  if (amount > balance) { status.textContent = 'Недостаточно средств. Доступно: ' + fmt(balance) + '.'; return; }
+  status.textContent = '';
+  askConfirm('Пожертвование', 'Перечислить ' + fmt(amount) + ' в сбор «' + c.title + '»?', () => {
+    fundBusy = true;
+    setModal('Пожертвование', 'Средства перечисляются в фонд сбора «' + c.title + '».');
+    runSteps(['Проверка суммы', 'Перечисление в фонд'], async () => {
+      if (amount > balance) { fundBusy = false; status.textContent = 'Недостаточно средств.'; document.getElementById('modalDesc').textContent = 'Недостаточно средств.'; return; }
+      const entry = {name: anon ? 'Аноним' : maskId(myId), amount, note, ts: Date.now()};
+      try { await backend.fundAdd(c.id, entry); }
+      catch(e){ fundBusy = false; status.textContent = 'Нет связи с сервером. Деньги не списаны.'; document.getElementById('modalDesc').textContent = 'Нет связи с сервером. Деньги не списаны.'; return; }
+      addTransaction('Пожертвование: ' + c.title, -amount);
+      lastDonation = {cid: c.id, title: c.title, from: myId, amount, note, when: new Date().toLocaleString('ru-RU'), num: docNumber('ПЖ', 7)};
+      fundBusy = false;
+      status.textContent = 'Спасибо! Пожертвовано ' + fmt(amount) + '.';
+      recBtn.style.display = 'block';
+      document.getElementById('fundAmt_' + c.id).value = '';
+      document.getElementById('fundNote_' + c.id).value = '';
+      refreshFunds();
+    });
+  });
+}
+initFunds();
+document.getElementById('tabFunds').addEventListener('click', refreshFunds);
+refreshFunds();
+setInterval(refreshFunds, 15000);
+
+// --- Заявки на пополнение: лимит, проверка данных, рассмотрение отделением ---
+Object.assign(backend, DB ? {
+  async appCreate(app){
+    const st = {id: app.id, num: app.num, amount: app.amount, status: 'pending', ts: app.ts};
+    let r = await fetch(DB + '/applications/' + app.id + '.json', {method:'PUT', body: JSON.stringify(app)});
+    if (!r.ok) throw new Error('app failed');
+    r = await fetch(DB + '/appstatus/' + app.account + '/' + app.id + '.json', {method:'PUT', body: JSON.stringify(st)});
+    if (!r.ok) throw new Error('app failed');
+  },
+  async appAll(){ const r = await fetch(DB + '/applications.json'); const d = await r.json(); return d ? Object.values(d) : []; },
+  async appMine(acc){ const r = await fetch(DB + '/appstatus/' + acc + '.json'); const d = await r.json(); return d ? Object.values(d) : []; },
+  async appDecide(app, patch){
+    let r = await fetch(DB + '/applications/' + app.id + '.json', {method:'PATCH', body: JSON.stringify(patch)});
+    if (!r.ok) throw new Error('decide failed');
+    r = await fetch(DB + '/appstatus/' + app.account + '/' + app.id + '.json', {method:'PATCH', body: JSON.stringify(patch)});
+    if (!r.ok) throw new Error('decide failed');
+  }
+} : {
+  async appCreate(app){ const m = lsJson('elbas_apps', {}); m[app.id] = app; lsSet('elbas_apps', JSON.stringify(m)); },
+  async appAll(){ return Object.values(lsJson('elbas_apps', {})); },
+  async appMine(acc){ return Object.values(lsJson('elbas_apps', {})).filter(a => a.account === acc).map(a => ({id:a.id, num:a.num, amount:a.amount, status:a.status, approved:a.approved, reason:a.reason, ts:a.ts})); },
+  async appDecide(app, patch){ const m = lsJson('elbas_apps', {}); if (m[app.id]) { Object.assign(m[app.id], patch); lsSet('elbas_apps', JSON.stringify(m)); } }
+});
+
+function readDepForm(){
+  return {
+    amount: Number(document.getElementById('depAmount').value),
+    basis: document.getElementById('depBasis').value,
+    desc: document.getElementById('depDesc').value.trim(),
+    contact: document.getElementById('depContact').value.trim(),
+    confirmed: document.getElementById('depConfirm').checked
+  };
+}
+function validateDep(f){
+  if (!Number.isInteger(f.amount) || f.amount < 1 || f.amount > DEPOSIT_LIMIT) return 'Сумма — целое число от 1 до ' + DEPOSIT_LIMIT.toLocaleString('ru-RU') + ' ELB.';
+  if (!f.basis) return 'Выберите основание пополнения.';
+  if (f.desc.length < 20) return 'Опишите источник средств подробнее (минимум 20 символов).';
+  if (f.contact.length < 2) return 'Укажите игровой ник или контакт для связи.';
+  if (!f.confirmed) return 'Подтвердите достоверность данных.';
+  return '';
+}
+async function submitApplication(f){
+  let mine;
+  try { mine = await backend.appMine(myId); } catch(e){ return {ok:false, msg:'Нет связи с сервером. Попробуйте позже.'}; }
+  if (mine.some(a => a.status === 'pending')) return {ok:false, msg:'У вас уже есть заявка на рассмотрении. Дождитесь решения.'};
+  const dayAgo = Date.now() - 24 * 3600 * 1000;
+  if (mine.filter(a => a.ts > dayAgo).length >= MAX_APPS_PER_DAY) return {ok:false, msg:'Достигнут лимит: не более ' + MAX_APPS_PER_DAY + ' заявок в сутки.'};
+  const app = {
+    id: 'APP' + Date.now() + Math.floor(Math.random() * 1000),
+    num: 'ЗП-' + Math.floor(100000 + Math.random() * 900000),
+    account: myId, amount: f.amount, basis: f.basis,
+    desc: f.desc.slice(0, 300), contact: f.contact.slice(0, 40),
+    ts: Date.now(), status: 'pending'
+  };
+  try { await backend.appCreate(app); } catch(e){ return {ok:false, msg:'Не удалось отправить заявку: нет связи с сервером.'}; }
+  notifyAdmin(app);
+  return {ok:true, app};
+}
+async function notifyAdmin(app){
+  if (!ADMIN_WEBHOOK_URL) return;
+  const clean = t => String(t).replace(/@/g, '@​').slice(0, 400);
+  const content = 'Новая заявка на пополнение ' + app.num + '\nСчёт: ' + app.account + '\nСумма: ' + app.amount + ' ELB\nОснование: ' + app.basis + '\nКонтакт: ' + clean(app.contact) + '\nОписание: ' + clean(app.desc);
+  try { await fetch(ADMIN_WEBHOOK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({content: content.slice(0, 1900)})}); } catch(e){}
+}
+
+async function refreshApps(){
+  if (!myId) return;
+  let list;
+  try { list = await backend.appMine(myId); } catch(e){ return; }
+  const box = document.getElementById('myApps');
+  const rows = (list || []).sort((a, b) => b.ts - a.ts).slice(0, 5);
+  box.innerHTML = rows.length ? rows.map(a => {
+    let st;
+    if (a.status === 'approved') st = '<span class="badge-st st-ok">Одобрена: +' + Math.floor(Number(a.approved) || 0) + ' ELB</span>';
+    else if (a.status === 'rejected') st = '<span class="badge-st st-no">Отклонена' + (a.reason ? ': ' + esc(String(a.reason).slice(0, 100)) : '') + '</span>';
+    else st = '<span class="badge-st st-pending">На рассмотрении</span>';
+    return '<div class="hist-item"><div><div>' + esc(String(a.num).slice(0, 20)) + ' · ' + Math.floor(Number(a.amount) || 0) + ' ELB</div><div class="meta">' + new Date(a.ts).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) + '</div></div>' + st + '</div>';
+  }).join('') : '<p class="empty">Заявок пока нет</p>';
+}
+
+document.getElementById('deposit').addEventListener('click', () => {
+  document.getElementById('depError').textContent = '';
+  document.getElementById('depositOverlay').classList.add('open');
+});
+document.getElementById('depCancel').addEventListener('click', () => document.getElementById('depositOverlay').classList.remove('open'));
+let depBusy = false;
+document.getElementById('depSubmit').addEventListener('click', async () => {
+  if (depBusy) return;
+  const err = document.getElementById('depError');
+  const f = readDepForm();
+  const bad = validateDep(f);
+  if (bad) { err.textContent = bad; return; }
+  depBusy = true;
+  err.style.color = '#7a8c81'; err.textContent = 'Отправка заявки...';
+  const res = await submitApplication(f);
+  depBusy = false;
+  err.style.color = '#e9736f';
+  if (!res.ok) { err.textContent = res.msg; return; }
+  err.textContent = '';
+  document.getElementById('depositOverlay').classList.remove('open');
+  ['depAmount', 'depDesc', 'depContact'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('depConfirm').checked = false;
+  setModal('Заявка на пополнение', 'Заявка регистрируется и проходит первичную проверку данных.');
+  runSteps(['Приём и регистрация заявки', 'Автопроверка данных', 'Передача на рассмотрение'], () => {
+    document.getElementById('modalDesc').textContent = 'Заявка ' + res.app.num + ' принята и передана на рассмотрение. Решение появится в блоке «Заявки на пополнение» на главной.';
+    refreshApps();
+  });
+});
+
+// --- Админ-панель ---
+let adminApps = [];
+function precheck(app, all){
+  const flags = [];
+  if (app.amount >= 15000) flags.push('крупная сумма');
+  if (String(app.desc).length < 40) flags.push('краткое описание');
+  if (app.basis === 'Иное') flags.push('нестандартное основание');
+  const day = 24 * 3600 * 1000;
+  const sameDay = all.filter(a => a.account === app.account && a.id !== app.id && Math.abs(a.ts - app.ts) < day);
+  if (sameDay.length >= 2) flags.push('частые заявки (' + (sameDay.length + 1) + ' за сутки)');
+  if (all.some(a => a.id !== app.id && a.account === app.account && a.desc === app.desc)) flags.push('повтор описания');
+  const approvedTotal = all.filter(a => a.account === app.account && a.status === 'approved').reduce((x, a) => x + (Number(a.approved) || 0), 0);
+  return {flags, level: flags.length >= 3 ? 'высокий' : flags.length >= 1 ? 'средний' : 'низкий', approvedTotal};
+}
+async function renderAdmin(){
+  const box = document.getElementById('adminList');
+  try { adminApps = await backend.appAll(); } catch(e){ box.innerHTML = '<div class="card"><p class="sub">Нет связи с сервером.</p></div>'; return; }
+  const order = {pending: 0, approved: 1, rejected: 2};
+  const rows = adminApps.slice().sort((a, b) => (order[a.status] - order[b.status]) || (b.ts - a.ts)).slice(0, 40);
+  if (!rows.length) { box.innerHTML = '<div class="card"><p class="empty">Заявок пока нет</p></div>'; return; }
+  box.innerHTML = rows.map(a => {
+    const pc = precheck(a, adminApps);
+    const stCls = a.status === 'approved' ? 'st-ok' : a.status === 'rejected' ? 'st-no' : 'st-pending';
+    const stTxt = a.status === 'approved' ? 'Одобрена +' + (Number(a.approved) || 0) : a.status === 'rejected' ? 'Отклонена' : 'На рассмотрении';
+    return '<div class="card">'
+      + '<div style="display:flex;justify-content:space-between;"><b>' + esc(a.num) + '</b><span class="badge-st ' + stCls + '">' + esc(stTxt) + '</span></div>'
+      + '<p class="sub">Счёт: ' + esc(a.account) + ' · ' + new Date(a.ts).toLocaleString('ru-RU') + '</p>'
+      + '<p class="sub">Сумма: <b style="color:#eaf3ee;">' + Math.floor(Number(a.amount) || 0) + ' ELB</b> · Основание: ' + esc(a.basis) + '</p>'
+      + '<p class="sub">Контакт: ' + esc(a.contact) + '</p>'
+      + '<p class="sub" style="color:#c9d6ce;">' + esc(a.desc) + '</p>'
+      + '<p class="sub">Автопроверка: риск ' + esc(pc.level) + (pc.flags.length ? ' — ' + esc(pc.flags.join(', ')) : '') + '. Одобрено ранее клиенту: ' + pc.approvedTotal + ' ELB.</p>'
+      + (a.status === 'pending' ? '<div class="admin-row"><button data-act="approve" data-id="' + esc(a.id) + '">Одобрить</button><button data-act="reject" data-id="' + esc(a.id) + '" style="border-color:#5a2626;color:#e9736f;">Отклонить</button></div>' : (a.reason ? '<p class="sub">Причина: ' + esc(a.reason) + '</p>' : ''))
+      + '</div>';
+  }).join('');
+}
+async function adminApprove(app){
+  if (app.status !== 'pending') return;
+  const v = prompt('Сумма к зачислению (до ' + DEPOSIT_LIMIT + ' ELB):', app.amount);
+  if (v === null) return;
+  const amt = Math.floor(Number(v));
+  if (!(amt >= 1 && amt <= DEPOSIT_LIMIT)) { alert('Сумма должна быть от 1 до ' + DEPOSIT_LIMIT + ' ELB.'); return; }
+  try {
+    await backend.push(app.account, {tid: 'dep-' + app.id, kind: 'deposit', amount: amt, appNum: app.num, ts: Date.now()});
+    await backend.appDecide(app, {status: 'approved', approved: amt, decidedTs: Date.now()});
+  } catch(e){ alert('Не удалось выполнить: нет связи с сервером.'); return; }
+  renderAdmin();
+}
+async function adminReject(app){
+  if (app.status !== 'pending') return;
+  const reason = prompt('Причина отказа:', 'Недостаточно данных');
+  if (reason === null) return;
+  try { await backend.appDecide(app, {status: 'rejected', reason: reason.slice(0, 100), decidedTs: Date.now()}); }
+  catch(e){ alert('Не удалось выполнить: нет связи с сервером.'); return; }
+  renderAdmin();
+}
+document.getElementById('adminList').addEventListener('click', e => {
+  const b = e.target && e.target.closest ? e.target.closest('button[data-act]') : null;
+  if (!b) return;
+  const app = adminApps.find(a => a.id === b.dataset.id);
+  if (!app) return;
+  b.disabled = true;
+  if (b.dataset.act === 'approve') adminApprove(app); else adminReject(app);
+});
+document.getElementById('adminRefresh').addEventListener('click', renderAdmin);
+document.getElementById('tabAdmin').addEventListener('click', renderAdmin);
+if (ADMIN_CODE) document.getElementById('adminLinkWrap').style.display = '';
+document.getElementById('adminLink').addEventListener('click', e => {
+  e.preventDefault();
+  const code = prompt('Код доступа');
+  if (code === null) return;
+  if (code === ADMIN_CODE && ADMIN_CODE) { document.getElementById('tabAdmin').style.display = ''; document.getElementById('tabAdmin').click(); }
+  else alert('Неверный код.');
 });
 
 // --- Чат-бот ---
 const chatLog = document.getElementById('chatLog');
+let lastIntent = null;
+function scrollChat(){ chatLog.scrollTop = chatLog.scrollHeight; }
 function addChatMsg(text, who){
   const div = document.createElement('div');
   div.className = 'chat-msg ' + who;
   div.textContent = text;
   chatLog.appendChild(div);
-  chatLog.scrollTop = chatLog.scrollHeight;
+  scrollChat();
 }
+function botSay(text){
+  const div = document.createElement('div');
+  div.className = 'chat-msg bot typing';
+  div.innerHTML = '<span></span><span></span><span></span>';
+  chatLog.appendChild(div);
+  scrollChat();
+  setTimeout(() => { div.classList.remove('typing'); div.textContent = text; scrollChat(); }, 500 + Math.min(text.length * 8, 900));
+}
+function pick(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+function normText(t){ return t.toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9\s\-]/g, ' '); }
+
+const TOPICS = 'баланс, штрафы, пополнение, снятие, переводы, сборы, документы (справки, выписка, договор в PDF), услуги отделения и график работы';
+
+const intents = [
+  { n:'greet', k:['привет','здравств','добрый день','добрый вечер','доброе утро','хай','салют','hello'],
+    a:() => pick(['Здравствуйте! Чем могу помочь?', 'Добрый день! Могу рассказать про ' + TOPICS + '.']) },
+  { n:'thanks', k:['спасибо','благодар','спс','thx'], a:() => pick(['Всегда пожалуйста! Если появятся вопросы — пишите.', 'Рад помочь. Обращайтесь ещё.']) },
+  { n:'bye', k:['пока','до свидан','всего доброго','до встречи'], a:() => 'До свидания! Хорошего дня.' },
+  { n:'how', k:['как дела','как ты','как жизнь'], a:() => 'Работаю в штатном режиме, очередь в отделении умеренная. Чем могу помочь?' },
+  { n:'who', k:['кто ты','ты бот','ты человек','как тебя зовут','ты ии','ты ai','ты робот'],
+    a:() => 'Я виртуальный помощник Elbas Bank. Отвечаю на вопросы про счёт, штрафы, документы и услуги отделения.' },
+  { n:'help', k:['помощь','помоги','что ты умеешь','что умеешь','что можешь','правила','как это работает','команды'],
+    a:() => 'Я могу рассказать про ' + TOPICS + '. Спросите, например: «сколько у меня штрафов?» или «как снять деньги?».' },
+  { n:'real', k:['реальн','настоящ','рубл','доллар','евро','гривн','обменять','обмен','вывести на карт','банковск'],
+    a:() => 'ELB — игровая валюта сообщества. Её нельзя обменять на реальные деньги или вывести на карту, и реальные платёжные данные в Elbas Bank вводить не нужно.' },
+  { n:'documents', k:['документ','справк','договор','pdf','пдф','выписк'],
+    a:() => 'Во вкладке «Документы» можно сформировать справку о состоянии счёта, выписку по операциям и договор банковского обслуживания. Каждый документ открывается с печатью и подписью, а кнопка «Сохранить PDF» сохраняет его файлом. Дополнительные справки (реквизиты, об открытии счёта, о штрафах, об оборотах) оформляются в разделе «Услуги».',
+    more:() => 'Справка содержит остаток, число штрафов и последние пять операций. Выписка показывает все операции с итогами по поступлениям и списаниям. Договор — типовой, на вашем номере счёта.' },
+  { n:'balance', k:['баланс','остаток','сколько денег','сколько у меня денег','сколько осталось','на счету','на счете','мой счет'],
+    a:() => 'Ваш текущий баланс: ' + fmt(balance) + '. Номер счёта: ' + myId + '.' },
+  { n:'lastop', k:['последняя операция','последнюю операцию','последний перевод','последняя транзакция','что было последним'],
+    a:() => { const h = txnHistory[0]; return h ? 'Последняя операция: «' + h.label + '» на ' + (h.amount>0?'+':'') + h.amount + ' ELB в ' + h.time + '.' : 'Операций по вашему счёту пока не было.'; } },
+  { n:'history', k:['истори','операци','транзакц'],
+    a:() => txnHistory.length ? 'По вашему счёту проведено операций: ' + txnHistory.length + '. Полный список — во вкладке «История», а печатную версию можно получить в «Документы» → «Выписка по счёту».' : 'Операций по вашему счёту пока не было. Они появятся во вкладке «История».' },
+  { n:'fines', k:['штраф','оштрафов','пеня','пени'],
+    a:() => { if (!fines.length) return 'У вас нет штрафов.'; const total = fines.reduce((a,f)=>a+f.amount,0); return 'У вас штрафов: ' + fines.length + ', на сумму ' + total + ' ELB. Последний — «' + fines[0].reason + '». Подробности — во вкладке «Штрафы». Если вы не согласны, штраф можно обжаловать в разделе «Услуги».'; },
+    more:() => 'Штрафы начисляются за просрочку платежей, нарушение регламента отделения, неполный пакет документов и несоответствие формы заявления. Обжалование рассматривает комиссия отделения в порядке очереди.' },
+  { n:'appeal', k:['обжалов','апелляц','оспорить','несогласен','не согласен'],
+    a:() => 'Откройте «Услуги» → «Обжаловать штраф». Комиссия рассмотрит обращение в порядке очереди и вынесет решение.' },
+  { n:'fund', k:['сбор','ополчен','пожертв','донат','благотвор','социальн','соц нужд'],
+    a:() => 'Во вкладке «Сборы» два фонда: «Народное ополчение Елбаса» и «Социальные нужды». Укажите сумму, при желании комментарий и отметьте анонимность, после чего пожертвование спишется со счёта, а у вас останется квитанция. Сборы ведутся в игровой валюте ELB.' },
+  { n:'transfer', k:['перевод','перевести','отправить','скинуть','на другой счет','на другой id','кому перевести'],
+    a:() => 'Откройте вкладку «Перевод», укажите ID получателя (формат EL-123456), сумму и при желании комментарий. Получатель увидит ELB на балансе сразу после зачисления, а у вас останется квитанция о переводе.',
+    more:() => 'Получить переводы можно, сообщив отправителю свой ID: ' + myId + '. Создать дополнительный счёт можно кнопкой «Новый счёт» вверху.' },
+  { n:'deposit', k:['пополн','положить','внести','зачислить','получить деньги','как получить'],
+    a:() => 'Для пополнения нажмите «Подать заявку на пополнение» на главной: укажите сумму (до 30 000 ELB за заявку), основание, описание источника средств и контакт для связи. Заявку проверяет отделение, и после одобрения сумма зачисляется на счёт. Статус виден в блоке «Заявки на пополнение».',
+    more:() => 'Одновременно может рассматриваться только одна заявка, и подать можно не больше трёх заявок в сутки. При отказе причина будет указана рядом с заявкой.' },
+  { n:'withdraw', k:['снять','снятие','вывести','вывод','обналич'],
+    a:() => 'Нажмите «Снять средства» на главной и подтвердите операцию. Заявка пройдёт проверку, согласование с отделом контроля, подтверждение личности и одобрение руководителя, и только после этого средства будут списаны.',
+    more:() => 'Всего пять этапов, пропустить их нельзя. Если выбрать лишнюю услугу в разделе «Услуги», она тоже пройдёт собственную цепочку согласований.' },
+  { n:'services', k:['услуг','печат','нотариус','очеред','управляющ','приём','прием','статус заявк'],
+    a:() => 'В разделе «Услуги» доступны: заверение печатью, запись в очередь, статус заявки, обжалование штрафа, приём у управляющего, нотариальное заверение, а также справки и документы: реквизиты счёта, справка об открытии счёта, справка о штрафах, справка об оборотах и заявление о закрытии счёта.' },
+  { n:'hours', k:['часы работы','график','работаете','во сколько','режим работы','открыт'],
+    a:() => 'Центральное отделение работает с понедельника по пятницу с 9:00 до 18:00 по времени Эльбаса. Онлайн-заявки принимаются круглосуточно, а рассматриваются в рабочие часы.' },
+  { n:'contacts', k:['телефон','контакт','адрес','где находит','почта','связаться'],
+    a:() => 'Мы находимся по адресу: г. Эльбасград, Центральное отделение. Онлайн-обращения принимаются в этом чате.' },
+  { n:'id', k:['мой id','мой ид','номер счета','айди','id счёта','id счета'],
+    a:() => 'Номер вашего счёта: ' + myId + '. Назовите его тому, кто хочет перевести вам ELB.' },
+  { n:'joke', k:['шутк','анекдот','пошути'],
+    a:() => pick(['Клиент спрашивает: «Когда рассмотрят мою заявку?» Банк отвечает: «Рассмотрим вашу заявку на сроки рассмотрения заявок».', 'Почему в Elbas Bank так много печатей? Потому что документ без печати — это просто бумага, а с печатью — это бумага с печатью.']) }
+];
+
 function botReply(q){
-  const s = q.toLowerCase();
-  if (s.includes('баланс')) return 'Ваш текущий баланс: ' + fmt(balance) + '.';
-  if (s.includes('штраф')) return 'Штрафы начисляются за нарушение регламента отделения — посмотреть причину можно во вкладке «Штрафы».';
-  if (s.includes('снят')) return 'Снятие оформляется через кнопку «Снять средства» на главной — заявка проходит несколько этапов согласования.';
-  if (s.includes('id')) return 'Ваш ID счёта: ' + myId + '.';
-  return 'Спасибо за обращение. Уточните вопрос — я могу рассказать про баланс, штрафы, снятие средств и ID счёта.';
+  const s = normText(q);
+  let best = null, bestScore = 0;
+  intents.forEach(it => {
+    const sc = it.k.reduce((a, w) => a + (s.includes(w) ? w.length : 0), 0);
+    if (sc > bestScore) { bestScore = sc; best = it; }
+  });
+  if (!best && lastIntent && /(почему|подробн|а что|поясни|расскажи|ещё|еще|а как)/.test(s)) {
+    const prev = intents.find(i => i.n === lastIntent);
+    if (prev && prev.more) return prev.more();
+  }
+  if (best) { lastIntent = best.n; return best.a(); }
+  return 'Не совсем понял вопрос. Я могу рассказать про ' + TOPICS + '. Попробуйте переформулировать.';
+}
+function sendChat(text){
+  const t = text.trim();
+  if (!t) return;
+  addChatMsg(t, 'user');
+  botSay(botReply(t));
 }
 document.getElementById('chatSend').addEventListener('click', () => {
   const input = document.getElementById('chatInput');
-  const text = input.value.trim();
-  if (!text) return;
-  addChatMsg(text, 'user');
+  const text = input.value;
   input.value = '';
-  setTimeout(() => addChatMsg(botReply(text), 'bot'), 400);
+  sendChat(text);
 });
 document.getElementById('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('chatSend').click(); });
 document.querySelectorAll('.chat-quick button').forEach(b => {
-  b.addEventListener('click', () => {
-    const q = b.dataset.q;
-    addChatMsg(b.textContent, 'user');
-    setTimeout(() => addChatMsg(botReply(q), 'bot'), 400);
-  });
+  b.addEventListener('click', () => sendChat(b.dataset.q));
 });
-addChatMsg('Здравствуйте! Я бот поддержки Elbas Bank. Чем могу помочь?', 'bot');
+addChatMsg('Здравствуйте! Я виртуальный помощник Elbas Bank. Спросите про баланс, штрафы, документы или услуги отделения.', 'bot');
 
 initAccount();
 </script>
