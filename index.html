@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Elbas Bank</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <meta name="theme-color" content="#0b0f0c">
 <style>
   * { box-sizing: border-box; }
@@ -386,6 +387,7 @@ const SHARED_DB_URL = '';
 const DB = SHARED_DB_URL.replace(/\/+$/, '');
 const ADMIN_CODE = '';        // код входа в админ-панель проверки заявок, например 'мой-секретный-код'; пусто — панель отключена
 const ADMIN_WEBHOOK_URL = ''; // необязательно: адрес Discord-вебхука, куда придут уведомления о новых заявках
+const NOTIFY_PROXY_URL = ''; // адрес вашего Cloudflare Worker (notify-worker.js): присылает заявки в Telegram без раскрытия токена бота
 const DEPOSIT_LIMIT = 30000;  // максимум за одну заявку на пополнение
 const START_BONUS = 0;        // стартовый баланс нового аккаунта (0 — деньги появляются только через одобренные заявки)
 const MAX_APPS_PER_DAY = 3;   // не более заявок в сутки с одного счёта
@@ -983,10 +985,20 @@ async function submitApplication(f){
   return {ok:true, app};
 }
 async function notifyAdmin(app){
-  if (!ADMIN_WEBHOOK_URL) return;
-  const clean = t => String(t).replace(/@/g, '@​').slice(0, 400);
-  const content = 'Новая заявка на пополнение ' + app.num + '\nСчёт: ' + app.account + '\nСумма: ' + app.amount + ' ELB\nОснование: ' + app.basis + '\nКонтакт: ' + clean(app.contact) + '\nОписание: ' + clean(app.desc);
-  try { await fetch(ADMIN_WEBHOOK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({content: content.slice(0, 1900)})}); } catch(e){}
+  const clean = t => String(t).replace(/@/g, '@\u200b').slice(0, 400);
+  if (ADMIN_WEBHOOK_URL) {
+    const text = 'Новая заявка на пополнение ' + app.num + '\nСчёт: ' + app.account + '\nСумма: ' + app.amount + ' ELB\nОснование: ' + app.basis + '\nКонтакт: ' + clean(app.contact) + '\nОписание: ' + clean(app.desc);
+    try { await fetch(ADMIN_WEBHOOK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({content: text.slice(0, 1900)})}); } catch(e){}
+  }
+  if (NOTIFY_PROXY_URL) {
+    const initData = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
+    try {
+      await fetch(NOTIFY_PROXY_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+        initData,
+        app: {num: app.num, account: app.account, amount: app.amount, basis: app.basis, contact: app.contact, desc: app.desc}
+      })});
+    } catch(e){}
+  }
 }
 
 async function refreshApps(){
@@ -1212,6 +1224,7 @@ document.querySelectorAll('.chat-quick button').forEach(b => {
 });
 addChatMsg('Здравствуйте! Я виртуальный помощник Elbas Bank. Спросите про баланс, штрафы, документы или услуги отделения.', 'bot');
 
+try { if (window.Telegram && window.Telegram.WebApp) { window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); } } catch(e){}
 initAccount();
 </script>
 </body>
