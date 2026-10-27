@@ -387,7 +387,8 @@ const SHARED_DB_URL = '';
 const DB = SHARED_DB_URL.replace(/\/+$/, '');
 const ADMIN_CODE = '';        // код входа в админ-панель проверки заявок, например 'мой-секретный-код'; пусто — панель отключена
 const ADMIN_WEBHOOK_URL = ''; // необязательно: адрес Discord-вебхука, куда придут уведомления о новых заявках
-const NOTIFY_PROXY_URL = ''; // адрес вашего Cloudflare Worker (notify-worker.js): присылает заявки в Telegram без раскрытия токена бота
+const NOTIFY_PROXY_URL = 'https://elbas-notify.gajvanukoleksandr.workers.dev'; // адрес вашего Cloudflare Worker (notify-worker.js): присылает заявки в Telegram без раскрытия токена бота
+const DEBUG_NOTIFY = true;  // true: после подачи заявки показывать, дошло ли уведомление админу (после настройки поставьте false)
 const DEPOSIT_LIMIT = 30000;  // максимум за одну заявку на пополнение
 const START_BONUS = 0;        // стартовый баланс нового аккаунта (0 — деньги появляются только через одобренные заявки)
 const MAX_APPS_PER_DAY = 3;   // не более заявок в сутки с одного счёта
@@ -981,8 +982,8 @@ async function submitApplication(f){
     ts: Date.now(), status: 'pending'
   };
   try { await backend.appCreate(app); } catch(e){ return {ok:false, msg:'Не удалось отправить заявку: нет связи с сервером.'}; }
-  notifyAdmin(app);
-  return {ok:true, app};
+  const notify = await notifyAdmin(app);
+  return {ok:true, app, notify};
 }
 async function notifyAdmin(app){
   const clean = t => String(t).replace(/@/g, '@\u200b').slice(0, 400);
@@ -990,15 +991,30 @@ async function notifyAdmin(app){
     const text = 'Новая заявка на пополнение ' + app.num + '\nСчёт: ' + app.account + '\nСумма: ' + app.amount + ' ELB\nОснование: ' + app.basis + '\nКонтакт: ' + clean(app.contact) + '\nОписание: ' + clean(app.desc);
     try { await fetch(ADMIN_WEBHOOK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({content: text.slice(0, 1900)})}); } catch(e){}
   }
-  if (NOTIFY_PROXY_URL) {
-    const initData = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
-    try {
-      await fetch(NOTIFY_PROXY_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
-        initData,
-        app: {num: app.num, account: app.account, amount: app.amount, basis: app.basis, contact: app.contact, desc: app.desc}
-      })});
-    } catch(e){}
-  }
+  if (!NOTIFY_PROXY_URL) return {state:'off', info:'адрес Worker не задан в файле (NOTIFY_PROXY_URL пуст)'};
+  const initData = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
+  if (!initData) return {state:'fail', info:'нет подписи Telegram: приложение открыто не из бота (или старая версия страницы без скрипта Telegram)'};
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), 8000) : null;
+  try {
+    const r = await fetch(NOTIFY_PROXY_URL, {method:'POST', headers:{'Content-Type':'application/json'}, signal: ctrl ? ctrl.signal : undefined, body: JSON.stringify({
+      initData,
+      app: {num: app.num, account: app.account, amount: app.amount, basis: app.basis, contact: app.contact, desc: app.desc}
+    })});
+    let j = null; try { j = await r.json(); } catch(e){}
+    if (r.ok && j && j.ok) return {state:'ok', info:''};
+    const err = (j && j.error) ? j.error : ('код ' + r.status);
+    const hints = {
+      'bad signature': 'подпись Telegram не прошла: в BOT_TOKEN должен быть токен именно того бота, из которого открыто приложение',
+      'telegram': 'Telegram не принял сообщение: нажмите /start в боте и проверьте ADMIN_CHAT_ID',
+      'not configured': 'в Worker не заданы BOT_TOKEN и ADMIN_CHAT_ID',
+      'rate limit': 'слишком много заявок подряд',
+      'bad data': 'Worker отклонил данные заявки'
+    };
+    return {state:'fail', info: hints[err] || err};
+  } catch(e) {
+    return {state:'fail', info:'нет связи с Worker (интернет, адрес или CORS): ' + (e && e.name === 'AbortError' ? 'таймаут' : (e && e.message) || 'ошибка')};
+  } finally { if (timer) clearTimeout(timer); }
 }
 
 async function refreshApps(){
@@ -1040,7 +1056,10 @@ document.getElementById('depSubmit').addEventListener('click', async () => {
   document.getElementById('depConfirm').checked = false;
   setModal('Заявка на пополнение', 'Заявка регистрируется и проходит первичную проверку данных.');
   runSteps(['Приём и регистрация заявки', 'Автопроверка данных', 'Передача на рассмотрение'], () => {
-    document.getElementById('modalDesc').textContent = 'Заявка ' + res.app.num + ' принята и передана на рассмотрение. Решение появится в блоке «Заявки на пополнение» на главной.';
+    let msg = 'Заявка ' + res.app.num + ' принята и передана на рассмотрение. Решение появится в блоке «Заявки на пополнение» на главной.';
+    if (DEBUG_NOTIFY && res.notify) msg += '\n\nУведомление администратору: ' + (res.notify.state === 'ok' ? 'отправлено ✓' : 'НЕ отправлено — ' + res.notify.info);
+    document.getElementById('modalDesc').style.whiteSpace = 'pre-line';
+    document.getElementById('modalDesc').textContent = msg;
     refreshApps();
   });
 });
