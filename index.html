@@ -130,9 +130,13 @@
   .badge-st { font-size:11px; font-weight:700; }
   .st-pending { color:#e0b34a; } .st-ok { color:#3ecf8e; } .st-no { color:#e9736f; }
   .admin-row { display:flex; gap:10px; margin-top:10px; }
+  .gate { position:fixed; inset:0; background:#070b09; display:none; align-items:center; justify-content:center; z-index:9999; padding:24px; text-align:center; }
+  .gate.open { display:flex; }
+  .gate-title { font-size:22px; font-weight:700; color:#3ecf8e; margin-bottom:12px; }
 </style>
 </head>
 <body>
+<div class="gate" id="gate"><div><p class="gate-title">Elbas Bank</p><p id="gateMsg" class="sub" style="font-size:14px;line-height:1.5;"></p><button id="gateRetry" style="margin-top:16px;display:none;">Повторить</button></div></div>
 <div class="app" id="app">
 
   <div class="card">
@@ -144,7 +148,6 @@
     </div>
     <p class="sub">Республика Elbas · онлайн-банкинг</p>
     <p class="id-tag" id="myIdTag">ID: ...</p>
-    <div class="acct-row"><select id="acctSelect"></select><button id="acctNew">＋ Новый счёт</button></div>
   </div>
 
   <div class="tabs">
@@ -172,6 +175,7 @@
       <p class="hist-title">Заявки на пополнение</p>
       <p class="sub" style="margin-bottom:8px;">Лимит: до 30 000 ELB за заявку. Каждую заявку проверяет отделение.</p>
       <div id="myApps"><p class="empty">Заявок пока нет</p></div>
+      <p class="sub" id="notifyStatus" style="margin-top:8px;"></p>
     </div>
     <div class="card fine-card">
       <div class="fine-title">⚠ Штраф</div>
@@ -206,6 +210,14 @@
       <p class="hist-title">Заявки на пополнение</p>
       <p class="sub" style="margin-bottom:10px;">Лимит: до 30 000 ELB за заявку. Одобрение зачисляет сумму на счёт клиента.</p>
       <button id="adminRefresh" style="width:100%;">Обновить список</button>
+    </div>
+    <div class="card">
+      <p class="hist-title">Назначить штраф</p>
+      <div class="field"><label>ID счёта</label><input id="adFineAcc" type="text" placeholder="EL-123456" autocomplete="off"></div>
+      <div class="field"><label>Сумма штрафа (ELB)</label><input id="adFineAmt" type="number" min="1" step="1" placeholder="50"></div>
+      <div class="field"><label>Основание</label><input id="adFineReason" type="text" maxlength="100" placeholder="Нарушение регламента отделения"></div>
+      <button id="adFineBtn" style="width:100%;">Назначить штраф</button>
+      <p class="sub" id="adFineStatus" style="margin-top:10px;"></p>
     </div>
     <div id="adminList"></div>
   </div>
@@ -299,8 +311,7 @@
     </div>
   </div>
 
-  <p class="simulator-tag">Elbas Bank · игровая валюта ELB</p>
-  <p class="simulator-tag" id="adminLinkWrap" style="display:none; margin-top:6px;"><a href="#" id="adminLink" style="color:#4d5b52;">Служебный вход</a></p>
+  <p class="simulator-tag">Elbas Bank · игровая валюта ELB · сборка 3</p>
 </div>
 
 <div class="modal-overlay" id="modalOverlay">
@@ -359,7 +370,7 @@
 
 <script>
 let myId = null;
-let balance = 1000;
+let balance = 0;
 let txnHistory = [];
 let fines = [];
 
@@ -380,138 +391,70 @@ function fmt(n){ return n.toLocaleString('ru-RU') + ' ELB'; }
 function nowTime(){ return new Date().toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}); }
 function genId(){ return 'EL-' + Math.floor(100000 + Math.random()*900000); }
 
-// ---- Хранилище, счета и переводы ----
-// Чтобы переводы доходили между разными устройствами, укажите адрес базы Firebase Realtime Database,
-// например: 'https://ваш-проект-default-rtdb.firebaseio.com'. Пусто — переводы работают между счетами в этом браузере.
-const SHARED_DB_URL = '';
-const DB = SHARED_DB_URL.replace(/\/+$/, '');
-const ADMIN_CODE = '';        // код входа в админ-панель проверки заявок, например 'мой-секретный-код'; пусто — панель отключена
-const ADMIN_WEBHOOK_URL = ''; // необязательно: адрес Discord-вебхука, куда придут уведомления о новых заявках
-const NOTIFY_PROXY_URL = 'https://elbas-notify.gajvanukoleksandr.workers.dev'; // адрес вашего Cloudflare Worker (notify-worker.js): присылает заявки в Telegram без раскрытия токена бота
-const DEBUG_NOTIFY = true;  // true: после подачи заявки показывать, дошло ли уведомление админу (после настройки поставьте false)
-const DEPOSIT_LIMIT = 30000;  // максимум за одну заявку на пополнение
-const START_BONUS = 0;        // стартовый баланс нового аккаунта (0 — деньги появляются только через одобренные заявки)
-const MAX_APPS_PER_DAY = 3;   // не более заявок в сутки с одного счёта
-const mem = {};
-function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return (k in mem) ? mem[k] : null; } }
-function lsSet(k, v){ mem[k] = v; try { localStorage.setItem(k, v); } catch(e){} }
-function lsJson(k, def){ try { const v = lsGet(k); return v ? JSON.parse(v) : def; } catch(e){ return def; } }
+// ---- Связь с сервером: балансы и операции хранятся и проверяются на сервере ----
+const API_URL = 'https://elbas-notify.gajvanukoleksandr.workers.dev'; // адрес вашего Cloudflare Worker (worker.js)
+const DEPOSIT_LIMIT = 30000;  // максимум за одну заявку (то же значение проверяет сервер)
+const tgApp = window.Telegram && window.Telegram.WebApp;
+const initData = (tgApp && tgApp.initData) || '';
+let isAdmin = false, opened = new Date().toISOString();
+let myApps = [], fundState = {};
+let lastTransfer = null, transferBusy = false, loaded = false;
 
-let seen = [];
-let opened = null;
-let lastTransfer = null;
-let transferBusy = false;
+function fmtTs(ts){ return new Date(ts).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}); }
+function newTid(){ const a = new Uint8Array(12); crypto.getRandomValues(a); return Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); }
+function notice(msg){ try { if (tgApp && tgApp.showAlert) { tgApp.showAlert(msg); return; } } catch(e){} alert(msg); }
 
-const backend = DB ? {
-  async register(id){ await fetch(DB + '/registry/' + id + '.json', {method:'PUT', body:'true'}); },
-  async exists(id){ const r = await fetch(DB + '/registry/' + id + '.json'); return (await r.json()) === true; },
-  async push(toId, entry){ const r = await fetch(DB + '/inbox/' + toId + '.json', {method:'POST', body: JSON.stringify(entry)}); if (!r.ok) throw new Error('push failed'); },
-  async pull(id){
-    const r = await fetch(DB + '/inbox/' + id + '.json');
-    const data = await r.json();
-    if (!data) return [];
-    const out = [];
-    for (const key of Object.keys(data)) {
-      await fetch(DB + '/inbox/' + id + '/' + key + '.json', {method:'DELETE'});
-      out.push(data[key]);
-    }
-    return out;
-  }
-} : {
-  async register(id){ const reg = lsJson('elbas_registry', []); if (!reg.includes(id)) { reg.push(id); lsSet('elbas_registry', JSON.stringify(reg)); } },
-  async exists(id){ return lsJson('elbas_registry', []).includes(id); },
-  async push(toId, entry){ const k = 'elbas_inbox_' + toId; const a = lsJson(k, []); a.push(entry); lsSet(k, JSON.stringify(a)); },
-  async pull(id){ const k = 'elbas_inbox_' + id; const a = lsJson(k, []); if (a.length) lsSet(k, '[]'); return a; }
-};
-
-function persist(){
-  if (!myId) return;
-  lsSet('elbas_acc_' + myId, JSON.stringify({balance, history: txnHistory.slice(0,200), fines: fines.slice(0,200), seen: seen.slice(0,200), opened}));
+async function api(action, params){
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), 15000) : null;
+  try {
+    const r = await fetch(API_URL, {method:'POST', headers:{'Content-Type':'application/json'}, signal: ctrl ? ctrl.signal : undefined,
+      body: JSON.stringify({initData, action, params: params || {}})});
+    let j = null; try { j = await r.json(); } catch(e){}
+    return j || {ok:false, error:'network', message:'Сервер не ответил. Попробуйте ещё раз.'};
+  } catch(e){
+    return {ok:false, error:'network', message:'Нет связи с сервером. Проверьте историю операций, прежде чем повторять.'};
+  } finally { if (timer) clearTimeout(timer); }
 }
-function loadAccount(id, startBalance){
-  const d = lsJson('elbas_acc_' + id, null);
-  if (d) { balance = d.balance; txnHistory = d.history || []; fines = d.fines || []; seen = d.seen || []; opened = d.opened || new Date().toISOString(); }
-  else { balance = startBalance; txnHistory = []; fines = []; seen = []; opened = new Date().toISOString(); }
+async function act(action, params){
+  const j = await api(action, params);
+  if (j.ok && j.state) applyState(j.state);
+  return j;
 }
-function myAccounts(){ return lsJson('elbas_mine', []); }
-
-async function freshId(){
-  for (let i = 0; i < 8; i++) {
-    const id = genId();
-    let taken = false;
-    try { taken = await backend.exists(id); } catch(e){}
-    if (!taken && !myAccounts().includes(id)) return id;
-  }
-  return genId();
-}
-function renderAccountSelect(){
-  const sel = document.getElementById('acctSelect');
-  sel.innerHTML = myAccounts().map(id => '<option value="' + id + '"' + (id === myId ? ' selected' : '') + '>' + id + '</option>').join('');
-  document.getElementById('myIdTag').textContent = 'ID: ' + myId;
-}
-function renderAll(){ renderAccountSelect(); renderBalance(); renderHistory(); renderFines(); }
-
-async function createAccount(){
-  persist();
-  const id = await freshId();
-  const mine = myAccounts(); mine.push(id);
-  lsSet('elbas_mine', JSON.stringify(mine));
-  myId = id; lsSet('elbas_me', id);
-  loadAccount(id, 0);
-  try { await backend.register(id); } catch(e){}
-  persist(); renderAll();
-}
-async function switchAccount(id){
-  if (id === myId) return;
-  persist();
-  myId = id; lsSet('elbas_me', id);
-  loadAccount(id, 0);
+function applyState(s){
+  myId = s.account.id; balance = s.account.balance;
+  opened = new Date(s.account.created_at).toISOString();
+  txnHistory = (s.history || []).map(h => ({label: h.label, amount: h.amount, time: fmtTs(h.ts)}));
+  fines = (s.fines || []).map(f => ({amount: f.amount, reason: f.reason, time: fmtTs(f.ts)}));
+  myApps = s.apps || []; fundState = s.funds || {}; isAdmin = !!s.isAdmin;
+  loaded = true;
   renderAll();
-  checkInbox();
-  refreshApps();
 }
+function renderAll(){
+  document.getElementById('myIdTag').textContent = 'ID: ' + myId;
+  document.getElementById('tabAdmin').style.display = isAdmin ? '' : 'none';
+  renderBalance(); renderHistory(); renderFines(); renderApps(); renderFunds();
+}
+async function refresh(){ if (!initData || document.hidden) return; await act('state'); }
 
-async function checkInbox(){
-  if (!myId) return;
-  let entries;
-  try { entries = await backend.pull(myId); } catch(e){ return; }
-  if (!entries || !entries.length) return;
-  let changed = false;
-  entries.forEach(en => {
-    if (!en || typeof en.tid !== 'string' || seen.includes(en.tid)) return;
-    const amount = Math.floor(Number(en.amount));
-    if (!(amount > 0) || amount > 1000000000) return;
-    if (en.kind === 'deposit') {
-      if (amount > DEPOSIT_LIMIT) return;
-      const num = /^[A-Za-zА-Яа-я0-9-]{3,20}$/.test(String(en.appNum)) ? en.appNum : '';
-      seen.unshift(en.tid);
-      txnHistory.unshift({label: 'Пополнение по заявке ' + num, amount, time: nowTime()});
-      balance += amount; changed = true;
-      return;
-    }
-    const from = /^EL-\d{6}$/.test(String(en.from)) ? en.from : 'неизвестного счёта';
-    const note = en.note ? String(en.note).slice(0, 60) : '';
-    seen.unshift(en.tid);
-    txnHistory.unshift({label: 'Перевод от ' + from + (note ? ' — ' + note : ''), amount, time: nowTime()});
-    balance += amount;
-    changed = true;
-  });
-  seen = seen.slice(0, 200);
-  if (changed) { persist(); renderBalance(); renderHistory(); }
+function showGate(msg, retry){
+  document.getElementById('gateMsg').textContent = msg;
+  document.getElementById('gateRetry').style.display = retry ? '' : 'none';
+  document.getElementById('gate').classList.add('open');
 }
+async function init(){
+  if (!initData) { showGate('Откройте Elbas Bank из Telegram-бота (кнопка приложения в боте). Вне Telegram операции со счётом недоступны.', false); return; }
+  const j = await act('state');
+  if (!j.ok) { showGate(j.message || 'Не удалось подключиться к серверу.', true); return; }
+  setInterval(refresh, 6000);
+  window.addEventListener('focus', refresh);
+}
+document.getElementById('gateRetry').addEventListener('click', () => location.reload());
 
 function normId(v){
   v = String(v).trim().toUpperCase().replace(/\s+/g, '');
   if (/^\d{6}$/.test(v)) v = 'EL-' + v;
   return v;
-}
-async function executeTransfer(toId, amount, note){
-  if (amount > balance) return {ok:false, msg:'Недостаточно средств.'};
-  const entry = {tid: myId + '-' + Date.now() + '-' + Math.floor(Math.random()*1e6), from: myId, amount, note, ts: Date.now()};
-  try { await backend.push(toId, entry); } catch(e){ return {ok:false, msg:'Нет связи с сервером. Деньги не списаны.'}; }
-  addTransaction('Перевод на ' + toId + (note ? ' — ' + note : ''), -amount);
-  lastTransfer = {from: myId, to: toId, amount, note, when: new Date().toLocaleString('ru-RU'), num: docNumber('ПР', 7)};
-  return {ok:true};
 }
 function buildReceipt(t){
   return paper('Квитанция о переводе', t.num,
@@ -524,15 +467,13 @@ function buildReceipt(t){
     + '<div class="kv" style="border:none;margin-top:6px;"><span>Сумма перевода</span><span class="big">' + fmt(t.amount) + '</span></div>');
 }
 
-document.getElementById('transferMode').textContent = DB
-  ? 'Переводы доходят на любые устройства: введите ID получателя и сумму.'
-  : 'Переводы работают между счетами в этом браузере. Чтобы переводить на другие устройства, нужен общий сервер.';
+document.getElementById('transferMode').textContent = 'Переводы доходят мгновенно на любой счёт Elbas Bank: введите ID получателя и сумму.';
 
-document.getElementById('sendBtn').addEventListener('click', async () => {
+document.getElementById('sendBtn').addEventListener('click', () => {
   const status = document.getElementById('sendStatus');
   const recBtn = document.getElementById('sendReceipt');
   recBtn.style.display = 'none';
-  if (transferBusy) return;
+  if (transferBusy || !loaded) return;
   const toId = normId(document.getElementById('sendToId').value);
   const amount = Number(document.getElementById('sendAmount').value);
   const note = document.getElementById('sendNote').value.trim().slice(0, 60);
@@ -540,58 +481,34 @@ document.getElementById('sendBtn').addEventListener('click', async () => {
   if (toId === myId) { status.textContent = 'Нельзя перевести средства самому себе.'; return; }
   if (!Number.isInteger(amount) || amount < 1) { status.textContent = 'Укажите сумму — целое число ELB.'; return; }
   if (amount > balance) { status.textContent = 'Недостаточно средств. Доступно: ' + fmt(balance) + '.'; return; }
-  status.textContent = 'Проверка реквизитов...';
-  let found;
-  try { found = await backend.exists(toId); } catch(e){ status.textContent = 'Нет связи с сервером. Попробуйте позже.'; return; }
-  if (!found) { status.textContent = 'Счёт ' + toId + ' не найден.'; return; }
   status.textContent = '';
   askConfirm('Перевод', 'Перевести ' + fmt(amount) + ' на счёт ' + toId + '?', () => {
     transferBusy = true;
+    const tid = newTid();
     setModal('Перевод средств', 'Реквизиты проверяются, после чего сумма зачисляется получателю.');
     runSteps(['Проверка реквизитов', 'Зачисление на счёт получателя'], async () => {
-      const res = await executeTransfer(toId, amount, note);
+      const res = await act('transfer', {to: toId, amount, note, tid});
       transferBusy = false;
       if (res.ok) {
+        const rc = res.receipt;
+        if (rc) lastTransfer = {from: rc.from, to: rc.to, amount: rc.amount, note: rc.note, when: new Date(rc.ts).toLocaleString('ru-RU'), num: docNumber('ПР', 7)};
         status.textContent = 'Переведено ' + fmt(amount) + ' на счёт ' + toId + '.';
-        recBtn.style.display = 'block';
+        if (lastTransfer) recBtn.style.display = 'block';
         document.getElementById('sendAmount').value = '';
         document.getElementById('sendNote').value = '';
       } else {
-        status.textContent = res.msg;
-        document.getElementById('modalDesc').textContent = res.msg;
+        status.textContent = res.message || 'Не удалось выполнить перевод.';
+        document.getElementById('modalDesc').textContent = status.textContent;
       }
     });
   });
 });
 document.getElementById('sendReceipt').addEventListener('click', () => { if (lastTransfer) openDoc(buildReceipt(lastTransfer)); });
-document.getElementById('acctNew').addEventListener('click', createAccount);
-document.getElementById('acctSelect').addEventListener('change', e => switchAccount(e.target.value));
-
-async function initAccount(){
-  const me = lsGet('elbas_me');
-  const mine = myAccounts();
-  if (me && mine.includes(me)) {
-    myId = me;
-    loadAccount(me, START_BONUS);
-  } else {
-    myId = await freshId();
-    mine.push(myId);
-    lsSet('elbas_mine', JSON.stringify(mine));
-    lsSet('elbas_me', myId);
-    loadAccount(myId, START_BONUS);
-  }
-  persist();
-  renderAll();
-  backend.register(myId).catch(() => {});
-  checkInbox();
-  refreshApps();
-  setInterval(checkInbox, 5000);
-  setInterval(refreshApps, 8000);
-  window.addEventListener('focus', checkInbox);
-}
 
 function renderBalance(){
-  balanceEl.textContent = fmt(balance);
+  const t = fmt(balance);
+  if (balanceEl.textContent === t) return;
+  balanceEl.textContent = t;
   balanceEl.classList.remove('bump'); void balanceEl.offsetWidth; balanceEl.classList.add('bump');
 }
 function renderHistory(){
@@ -599,29 +516,20 @@ function renderHistory(){
   historyEl.innerHTML = txnHistory.map(h => {
     const cls = h.amount < 0 ? 'neg' : 'pos';
     const sign = h.amount > 0 ? '+' : '';
-    return '<div class="hist-item"><div><div>'+esc(h.label)+'</div><div class="meta">'+h.time+'</div></div><span class="'+cls+'">'+sign+h.amount+' ELB</span></div>';
+    return '<div class="hist-item"><div><div>'+esc(h.label)+'</div><div class="meta">'+esc(h.time)+'</div></div><span class="'+cls+'">'+sign+h.amount+' ELB</span></div>';
   }).join('');
 }
 const fineReasons = ['Просрочка платежа по счёту','Несвоевременное обновление данных','Нарушение регламента отделения','Задержка предоставления справки','Несоответствие формы заявления','Опоздание на приём к сотруднику','Неполный пакет документов'];
 function renderFines(){
   fineBadge.textContent = fines.length;
   if (!fines.length) { finesListEl.innerHTML = '<p class="empty">Штрафов пока нет</p>'; return; }
-  finesListEl.innerHTML = fines.map(f => '<div class="notice"><div class="ic">⚠</div><div class="txt"><div><b>Штраф '+f.amount+' ELB</b></div><div>'+f.reason+'</div><div class="time">'+f.time+'</div></div></div>').join('');
+  finesListEl.innerHTML = fines.map(f => '<div class="notice"><div class="ic">⚠</div><div class="txt"><div><b>Штраф '+f.amount+' ELB</b></div><div>'+esc(f.reason)+'</div><div class="time">'+esc(f.time)+'</div></div></div>').join('');
 }
-function addTransaction(label, amount){
-  txnHistory.unshift({label, amount, time: nowTime()});
-  balance += amount;
-  persist();
-  renderBalance(); renderHistory();
-}
-function addFine(amount, customReason){
-  const reason = customReason || fineReasons[Math.floor(Math.random()*fineReasons.length)];
-  fines.unshift({amount, reason, time: nowTime()});
-  renderFines();
-  if (amount > 0) addTransaction('Штраф: ' + reason, -amount); else persist();
-}
-
-document.getElementById('fine').addEventListener('click', () => addFine(50));
+document.getElementById('fine').addEventListener('click', async () => {
+  if (!loaded) return;
+  const res = await act('self_fine');
+  if (!res.ok) notice(res.message || 'Не удалось применить штраф.');
+});
 
 function askConfirm(title, desc, onYes){
   confirmTitle.textContent = title; confirmDesc.textContent = desc;
@@ -646,10 +554,15 @@ function runSteps(steps, onDone){
 modalClose.addEventListener('click', () => overlay.classList.remove('open'));
 
 document.getElementById('withdraw').addEventListener('click', () => {
+  if (!loaded) return;
   askConfirm('Снять средства', 'Запросить снятие 100 ELB со счёта?', () => {
+    const tid = newTid();
     setModal('Оформление снятия средств', 'Заявка проходит согласование в нескольких инстанциях отделения.');
     runSteps(['Проверка заявления','Согласование с отделом контроля','Подтверждение личности','Одобрение руководителя','Зачисление средств'],
-      () => addTransaction('Снятие (после согласования)', -100));
+      async () => {
+        const res = await act('withdraw', {amount: 100, tid});
+        if (!res.ok) document.getElementById('modalDesc').textContent = res.message || 'Не удалось выполнить операцию.';
+      });
   });
 });
 
@@ -828,17 +741,8 @@ const CAMPAIGNS = [
   { id:'militia', title:'Народное ополчение Елбаса', desc:'Сбор на нужды народного ополчения Республики Елбас: снаряжение, связь и обеспечение добровольцев.', goal:100000 },
   { id:'social', title:'Социальные нужды', desc:'Поддержка пожилых граждан, многодетных семей и жителей, оказавшихся в трудной ситуации.', goal:50000 }
 ];
-Object.assign(backend, DB ? {
-  async fundList(cid){ const r = await fetch(DB + '/funds/' + cid + '.json'); const d = await r.json(); return d ? Object.values(d) : []; },
-  async fundAdd(cid, entry){ const r = await fetch(DB + '/funds/' + cid + '.json', {method:'POST', body: JSON.stringify(entry)}); if (!r.ok) throw new Error('fund failed'); }
-} : {
-  async fundList(cid){ return lsJson('elbas_fund_' + cid, []); },
-  async fundAdd(cid, entry){ const a = lsJson('elbas_fund_' + cid, []); a.push(entry); lsSet('elbas_fund_' + cid, JSON.stringify(a)); }
-});
-
 let fundBusy = false;
 let lastDonation = null;
-function maskId(id){ return String(id).replace(/^(EL-\d{2})\d{2}(\d{2})$/, '$1••$2'); }
 
 function initFunds(){
   document.getElementById('fundsList').innerHTML = CAMPAIGNS.map(c =>
@@ -863,21 +767,19 @@ function initFunds(){
   });
 }
 
-async function refreshFunds(){
-  for (const c of CAMPAIGNS) {
-    let list = [];
-    try { list = await backend.fundList(c.id); } catch(e){ continue; }
-    const clean = (list || []).filter(e => e && Number(e.amount) > 0 && Number(e.amount) <= 1000000000)
-      .map(e => ({name: String(e.name || 'Аноним').slice(0, 20), amount: Math.floor(Number(e.amount)), note: e.note ? String(e.note).slice(0, 60) : '', ts: Number(e.ts) || 0}));
-    const total = clean.reduce((a, e) => a + e.amount, 0);
+function renderFunds(){
+  CAMPAIGNS.forEach(c => {
+    const f = fundState[c.id];
+    if (!f) return;
+    const total = Math.floor(Number(f.total) || 0);
     const pct = Math.min(100, Math.round(total / c.goal * 100));
     document.getElementById('fundFill_' + c.id).style.width = pct + '%';
     document.getElementById('fundTotal_' + c.id).textContent = fmt(total) + ' (' + pct + '%)';
-    const recent = clean.sort((a, b) => b.ts - a.ts).slice(0, 8);
+    const recent = (f.donors || []).slice(0, 8);
     document.getElementById('fundDonors_' + c.id).innerHTML = recent.length
-      ? recent.map(e => '<div class="hist-item"><div><div>' + esc(e.name) + '</div><div class="meta">' + (e.note ? esc(e.note) + ' · ' : '') + new Date(e.ts).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) + '</div></div><span class="pos">+' + e.amount + ' ELB</span></div>').join('')
+      ? recent.map(e => '<div class="hist-item"><div><div>' + esc(e.name) + '</div><div class="meta">' + (e.note ? esc(e.note) + ' · ' : '') + fmtTs(e.ts) + '</div></div><span class="pos">+' + Math.floor(Number(e.amount) || 0) + ' ELB</span></div>').join('')
       : '<p class="empty">Пожертвований пока нет</p>';
-  }
+  });
 }
 
 function buildDonationReceipt(d){
@@ -893,7 +795,7 @@ function buildDonationReceipt(d){
 }
 
 function donate(c){
-  if (fundBusy) return;
+  if (fundBusy || !loaded) return;
   const status = document.getElementById('fundStatus_' + c.id);
   const recBtn = document.getElementById('fundReceipt_' + c.id);
   recBtn.style.display = 'none';
@@ -905,52 +807,24 @@ function donate(c){
   status.textContent = '';
   askConfirm('Пожертвование', 'Перечислить ' + fmt(amount) + ' в сбор «' + c.title + '»?', () => {
     fundBusy = true;
+    const tid = newTid();
     setModal('Пожертвование', 'Средства перечисляются в фонд сбора «' + c.title + '».');
     runSteps(['Проверка суммы', 'Перечисление в фонд'], async () => {
-      if (amount > balance) { fundBusy = false; status.textContent = 'Недостаточно средств.'; document.getElementById('modalDesc').textContent = 'Недостаточно средств.'; return; }
-      const entry = {name: anon ? 'Аноним' : maskId(myId), amount, note, ts: Date.now()};
-      try { await backend.fundAdd(c.id, entry); }
-      catch(e){ fundBusy = false; status.textContent = 'Нет связи с сервером. Деньги не списаны.'; document.getElementById('modalDesc').textContent = 'Нет связи с сервером. Деньги не списаны.'; return; }
-      addTransaction('Пожертвование: ' + c.title, -amount);
-      lastDonation = {cid: c.id, title: c.title, from: myId, amount, note, when: new Date().toLocaleString('ru-RU'), num: docNumber('ПЖ', 7)};
+      const res = await act('donate', {fund: c.id, amount, note, anon, tid});
       fundBusy = false;
+      if (!res.ok) { status.textContent = res.message || 'Не удалось выполнить операцию.'; document.getElementById('modalDesc').textContent = status.textContent; return; }
+      const rc = res.receipt;
+      if (rc) lastDonation = {cid: c.id, title: rc.title, from: rc.from, amount: rc.amount, note: rc.note, when: new Date(rc.ts).toLocaleString('ru-RU'), num: docNumber('ПЖ', 7)};
       status.textContent = 'Спасибо! Пожертвовано ' + fmt(amount) + '.';
-      recBtn.style.display = 'block';
+      if (lastDonation && lastDonation.cid === c.id) recBtn.style.display = 'block';
       document.getElementById('fundAmt_' + c.id).value = '';
       document.getElementById('fundNote_' + c.id).value = '';
-      refreshFunds();
     });
   });
 }
 initFunds();
-document.getElementById('tabFunds').addEventListener('click', refreshFunds);
-refreshFunds();
-setInterval(refreshFunds, 15000);
 
 // --- Заявки на пополнение: лимит, проверка данных, рассмотрение отделением ---
-Object.assign(backend, DB ? {
-  async appCreate(app){
-    const st = {id: app.id, num: app.num, amount: app.amount, status: 'pending', ts: app.ts};
-    let r = await fetch(DB + '/applications/' + app.id + '.json', {method:'PUT', body: JSON.stringify(app)});
-    if (!r.ok) throw new Error('app failed');
-    r = await fetch(DB + '/appstatus/' + app.account + '/' + app.id + '.json', {method:'PUT', body: JSON.stringify(st)});
-    if (!r.ok) throw new Error('app failed');
-  },
-  async appAll(){ const r = await fetch(DB + '/applications.json'); const d = await r.json(); return d ? Object.values(d) : []; },
-  async appMine(acc){ const r = await fetch(DB + '/appstatus/' + acc + '.json'); const d = await r.json(); return d ? Object.values(d) : []; },
-  async appDecide(app, patch){
-    let r = await fetch(DB + '/applications/' + app.id + '.json', {method:'PATCH', body: JSON.stringify(patch)});
-    if (!r.ok) throw new Error('decide failed');
-    r = await fetch(DB + '/appstatus/' + app.account + '/' + app.id + '.json', {method:'PATCH', body: JSON.stringify(patch)});
-    if (!r.ok) throw new Error('decide failed');
-  }
-} : {
-  async appCreate(app){ const m = lsJson('elbas_apps', {}); m[app.id] = app; lsSet('elbas_apps', JSON.stringify(m)); },
-  async appAll(){ return Object.values(lsJson('elbas_apps', {})); },
-  async appMine(acc){ return Object.values(lsJson('elbas_apps', {})).filter(a => a.account === acc).map(a => ({id:a.id, num:a.num, amount:a.amount, status:a.status, approved:a.approved, reason:a.reason, ts:a.ts})); },
-  async appDecide(app, patch){ const m = lsJson('elbas_apps', {}); if (m[app.id]) { Object.assign(m[app.id], patch); lsSet('elbas_apps', JSON.stringify(m)); } }
-});
-
 function readDepForm(){
   return {
     amount: Number(document.getElementById('depAmount').value),
@@ -969,66 +843,19 @@ function validateDep(f){
   return '';
 }
 async function submitApplication(f){
-  let mine;
-  try { mine = await backend.appMine(myId); } catch(e){ return {ok:false, msg:'Нет связи с сервером. Попробуйте позже.'}; }
-  if (mine.some(a => a.status === 'pending')) return {ok:false, msg:'У вас уже есть заявка на рассмотрении. Дождитесь решения.'};
-  const dayAgo = Date.now() - 24 * 3600 * 1000;
-  if (mine.filter(a => a.ts > dayAgo).length >= MAX_APPS_PER_DAY) return {ok:false, msg:'Достигнут лимит: не более ' + MAX_APPS_PER_DAY + ' заявок в сутки.'};
-  const app = {
-    id: 'APP' + Date.now() + Math.floor(Math.random() * 1000),
-    num: 'ЗП-' + Math.floor(100000 + Math.random() * 900000),
-    account: myId, amount: f.amount, basis: f.basis,
-    desc: f.desc.slice(0, 300), contact: f.contact.slice(0, 40),
-    ts: Date.now(), status: 'pending'
-  };
-  try { await backend.appCreate(app); } catch(e){ return {ok:false, msg:'Не удалось отправить заявку: нет связи с сервером.'}; }
-  const notify = await notifyAdmin(app);
-  return {ok:true, app, notify};
-}
-async function notifyAdmin(app){
-  const clean = t => String(t).replace(/@/g, '@\u200b').slice(0, 400);
-  if (ADMIN_WEBHOOK_URL) {
-    const text = 'Новая заявка на пополнение ' + app.num + '\nСчёт: ' + app.account + '\nСумма: ' + app.amount + ' ELB\nОснование: ' + app.basis + '\nКонтакт: ' + clean(app.contact) + '\nОписание: ' + clean(app.desc);
-    try { await fetch(ADMIN_WEBHOOK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({content: text.slice(0, 1900)})}); } catch(e){}
-  }
-  if (!NOTIFY_PROXY_URL) return {state:'off', info:'адрес Worker не задан в файле (NOTIFY_PROXY_URL пуст)'};
-  const initData = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
-  if (!initData) return {state:'fail', info:'нет подписи Telegram: приложение открыто не из бота (или старая версия страницы без скрипта Telegram)'};
-  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-  const timer = ctrl ? setTimeout(() => ctrl.abort(), 8000) : null;
-  try {
-    const r = await fetch(NOTIFY_PROXY_URL, {method:'POST', headers:{'Content-Type':'application/json'}, signal: ctrl ? ctrl.signal : undefined, body: JSON.stringify({
-      initData,
-      app: {num: app.num, account: app.account, amount: app.amount, basis: app.basis, contact: app.contact, desc: app.desc}
-    })});
-    let j = null; try { j = await r.json(); } catch(e){}
-    if (r.ok && j && j.ok) return {state:'ok', info:''};
-    const err = (j && j.error) ? j.error : ('код ' + r.status);
-    const hints = {
-      'bad signature': 'подпись Telegram не прошла: в BOT_TOKEN должен быть токен именно того бота, из которого открыто приложение',
-      'telegram': 'Telegram не принял сообщение: нажмите /start в боте и проверьте ADMIN_CHAT_ID',
-      'not configured': 'в Worker не заданы BOT_TOKEN и ADMIN_CHAT_ID',
-      'rate limit': 'слишком много заявок подряд',
-      'bad data': 'Worker отклонил данные заявки'
-    };
-    return {state:'fail', info: hints[err] || err};
-  } catch(e) {
-    return {state:'fail', info:'нет связи с Worker (интернет, адрес или CORS): ' + (e && e.name === 'AbortError' ? 'таймаут' : (e && e.message) || 'ошибка')};
-  } finally { if (timer) clearTimeout(timer); }
+  const res = await act('deposit_apply', {amount: f.amount, basis: f.basis, desc: f.desc, contact: f.contact});
+  return res.ok ? {ok:true, app:res.applied} : {ok:false, msg:res.message || 'Не удалось отправить заявку.'};
 }
 
-async function refreshApps(){
-  if (!myId) return;
-  let list;
-  try { list = await backend.appMine(myId); } catch(e){ return; }
+function renderApps(){
   const box = document.getElementById('myApps');
-  const rows = (list || []).sort((a, b) => b.ts - a.ts).slice(0, 5);
+  const rows = myApps.slice(0, 5);
   box.innerHTML = rows.length ? rows.map(a => {
     let st;
     if (a.status === 'approved') st = '<span class="badge-st st-ok">Одобрена: +' + Math.floor(Number(a.approved) || 0) + ' ELB</span>';
     else if (a.status === 'rejected') st = '<span class="badge-st st-no">Отклонена' + (a.reason ? ': ' + esc(String(a.reason).slice(0, 100)) : '') + '</span>';
     else st = '<span class="badge-st st-pending">На рассмотрении</span>';
-    return '<div class="hist-item"><div><div>' + esc(String(a.num).slice(0, 20)) + ' · ' + Math.floor(Number(a.amount) || 0) + ' ELB</div><div class="meta">' + new Date(a.ts).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) + '</div></div>' + st + '</div>';
+    return '<div class="hist-item"><div><div>' + esc(String(a.num).slice(0, 20)) + ' · ' + Math.floor(Number(a.amount) || 0) + ' ELB</div><div class="meta">' + fmtTs(a.created_at) + '</div></div>' + st + '</div>';
   }).join('') : '<p class="empty">Заявок пока нет</p>';
 }
 
@@ -1039,7 +866,7 @@ document.getElementById('deposit').addEventListener('click', () => {
 document.getElementById('depCancel').addEventListener('click', () => document.getElementById('depositOverlay').classList.remove('open'));
 let depBusy = false;
 document.getElementById('depSubmit').addEventListener('click', async () => {
-  if (depBusy) return;
+  if (depBusy || !loaded) return;
   const err = document.getElementById('depError');
   const f = readDepForm();
   const bad = validateDep(f);
@@ -1056,86 +883,75 @@ document.getElementById('depSubmit').addEventListener('click', async () => {
   document.getElementById('depConfirm').checked = false;
   setModal('Заявка на пополнение', 'Заявка регистрируется и проходит первичную проверку данных.');
   runSteps(['Приём и регистрация заявки', 'Автопроверка данных', 'Передача на рассмотрение'], () => {
-    let msg = 'Заявка ' + res.app.num + ' принята и передана на рассмотрение. Решение появится в блоке «Заявки на пополнение» на главной.';
-    if (DEBUG_NOTIFY && res.notify) msg += '\n\nУведомление администратору: ' + (res.notify.state === 'ok' ? 'отправлено ✓' : 'НЕ отправлено — ' + res.notify.info);
-    document.getElementById('modalDesc').style.whiteSpace = 'pre-line';
-    document.getElementById('modalDesc').textContent = msg;
-    refreshApps();
+    document.getElementById('modalDesc').textContent = 'Заявка ' + res.app.num + ' принята и передана на рассмотрение. Решение появится в блоке «Заявки на пополнение» на главной, а также придёт сообщением в Telegram.';
   });
 });
 
-// --- Админ-панель ---
+// --- Админ-панель (доступна только администратору по Telegram-id, проверяется сервером) ---
 let adminApps = [];
-function precheck(app, all){
-  const flags = [];
-  if (app.amount >= 15000) flags.push('крупная сумма');
-  if (String(app.desc).length < 40) flags.push('краткое описание');
-  if (app.basis === 'Иное') flags.push('нестандартное основание');
-  const day = 24 * 3600 * 1000;
-  const sameDay = all.filter(a => a.account === app.account && a.id !== app.id && Math.abs(a.ts - app.ts) < day);
-  if (sameDay.length >= 2) flags.push('частые заявки (' + (sameDay.length + 1) + ' за сутки)');
-  if (all.some(a => a.id !== app.id && a.account === app.account && a.desc === app.desc)) flags.push('повтор описания');
-  const approvedTotal = all.filter(a => a.account === app.account && a.status === 'approved').reduce((x, a) => x + (Number(a.approved) || 0), 0);
-  return {flags, level: flags.length >= 3 ? 'высокий' : flags.length >= 1 ? 'средний' : 'низкий', approvedTotal};
-}
 async function renderAdmin(){
   const box = document.getElementById('adminList');
-  try { adminApps = await backend.appAll(); } catch(e){ box.innerHTML = '<div class="card"><p class="sub">Нет связи с сервером.</p></div>'; return; }
-  const order = {pending: 0, approved: 1, rejected: 2};
-  const rows = adminApps.slice().sort((a, b) => (order[a.status] - order[b.status]) || (b.ts - a.ts)).slice(0, 40);
-  if (!rows.length) { box.innerHTML = '<div class="card"><p class="empty">Заявок пока нет</p></div>'; return; }
-  box.innerHTML = rows.map(a => {
-    const pc = precheck(a, adminApps);
+  const j = await api('admin_list');
+  if (!j.ok) { box.innerHTML = '<div class="card"><p class="sub">' + esc(j.message || 'Нет связи с сервером.') + '</p></div>'; return; }
+  adminApps = j.apps || [];
+  if (!adminApps.length) { box.innerHTML = '<div class="card"><p class="empty">Заявок пока нет</p></div>'; return; }
+  box.innerHTML = adminApps.slice(0, 40).map(a => {
     const stCls = a.status === 'approved' ? 'st-ok' : a.status === 'rejected' ? 'st-no' : 'st-pending';
     const stTxt = a.status === 'approved' ? 'Одобрена +' + (Number(a.approved) || 0) : a.status === 'rejected' ? 'Отклонена' : 'На рассмотрении';
+    const who = a.username ? ' · @' + esc(a.username) : '';
     return '<div class="card">'
       + '<div style="display:flex;justify-content:space-between;"><b>' + esc(a.num) + '</b><span class="badge-st ' + stCls + '">' + esc(stTxt) + '</span></div>'
-      + '<p class="sub">Счёт: ' + esc(a.account) + ' · ' + new Date(a.ts).toLocaleString('ru-RU') + '</p>'
+      + '<p class="sub">Счёт: ' + esc(a.account) + who + ' · ' + new Date(a.created_at).toLocaleString('ru-RU') + '</p>'
       + '<p class="sub">Сумма: <b style="color:#eaf3ee;">' + Math.floor(Number(a.amount) || 0) + ' ELB</b> · Основание: ' + esc(a.basis) + '</p>'
       + '<p class="sub">Контакт: ' + esc(a.contact) + '</p>'
       + '<p class="sub" style="color:#c9d6ce;">' + esc(a.desc) + '</p>'
-      + '<p class="sub">Автопроверка: риск ' + esc(pc.level) + (pc.flags.length ? ' — ' + esc(pc.flags.join(', ')) : '') + '. Одобрено ранее клиенту: ' + pc.approvedTotal + ' ELB.</p>'
-      + (a.status === 'pending' ? '<div class="admin-row"><button data-act="approve" data-id="' + esc(a.id) + '">Одобрить</button><button data-act="reject" data-id="' + esc(a.id) + '" style="border-color:#5a2626;color:#e9736f;">Отклонить</button></div>' : (a.reason ? '<p class="sub">Причина: ' + esc(a.reason) + '</p>' : ''))
+      + '<p class="sub">Автопроверка: риск ' + esc(a.level) + ((a.flags || []).length ? ' — ' + esc(a.flags.join(', ')) : '') + '. Одобрено ранее клиенту: ' + (Number(a.approvedTotal) || 0) + ' ELB.</p>'
+      + (a.status === 'pending'
+        ? '<div class="field" style="margin-top:10px;"><label>Сумма к зачислению (до ' + DEPOSIT_LIMIT + ' ELB)</label><input type="number" min="1" max="' + DEPOSIT_LIMIT + '" value="' + Math.floor(Number(a.amount) || 0) + '" data-amt="' + esc(a.id) + '"></div>'
+          + '<div class="field"><label>Причина отказа (если отклоняете)</label><input type="text" maxlength="100" placeholder="Недостаточно данных" data-why="' + esc(a.id) + '"></div>'
+          + '<div class="admin-row"><button data-act="approve" data-id="' + esc(a.id) + '">Одобрить</button><button data-act="reject" data-id="' + esc(a.id) + '" style="border-color:#5a2626;color:#e9736f;">Отклонить</button></div>'
+        : (a.reason ? '<p class="sub">Причина: ' + esc(a.reason) + '</p>' : ''))
       + '</div>';
   }).join('');
 }
-async function adminApprove(app){
-  if (app.status !== 'pending') return;
-  const v = prompt('Сумма к зачислению (до ' + DEPOSIT_LIMIT + ' ELB):', app.amount);
-  if (v === null) return;
-  const amt = Math.floor(Number(v));
-  if (!(amt >= 1 && amt <= DEPOSIT_LIMIT)) { alert('Сумма должна быть от 1 до ' + DEPOSIT_LIMIT + ' ELB.'); return; }
-  try {
-    await backend.push(app.account, {tid: 'dep-' + app.id, kind: 'deposit', amount: amt, appNum: app.num, ts: Date.now()});
-    await backend.appDecide(app, {status: 'approved', approved: amt, decidedTs: Date.now()});
-  } catch(e){ alert('Не удалось выполнить: нет связи с сервером.'); return; }
-  renderAdmin();
+function adminField(attr, id){
+  const list = document.getElementById('adminList').querySelectorAll('input[' + attr + ']');
+  for (const el of list) if (el.getAttribute(attr) === id) return el;
+  return null;
 }
-async function adminReject(app){
-  if (app.status !== 'pending') return;
-  const reason = prompt('Причина отказа:', 'Недостаточно данных');
-  if (reason === null) return;
-  try { await backend.appDecide(app, {status: 'rejected', reason: reason.slice(0, 100), decidedTs: Date.now()}); }
-  catch(e){ alert('Не удалось выполнить: нет связи с сервером.'); return; }
-  renderAdmin();
-}
-document.getElementById('adminList').addEventListener('click', e => {
+document.getElementById('adminList').addEventListener('click', async e => {
   const b = e.target && e.target.closest ? e.target.closest('button[data-act]') : null;
-  if (!b) return;
-  const app = adminApps.find(a => a.id === b.dataset.id);
-  if (!app) return;
+  if (!b || b.disabled) return;
+  const id = b.dataset.id;
   b.disabled = true;
-  if (b.dataset.act === 'approve') adminApprove(app); else adminReject(app);
+  let res;
+  if (b.dataset.act === 'approve') {
+    const inp = adminField('data-amt', id);
+    res = await act('admin_decide', {id, decision: 'approve', amount: Number(inp ? inp.value : 0)});
+  } else {
+    const inp = adminField('data-why', id);
+    res = await act('admin_decide', {id, decision: 'reject', reason: inp ? inp.value : ''});
+  }
+  if (!res.ok) notice(res.message || 'Не удалось выполнить.');
+  renderAdmin();
 });
 document.getElementById('adminRefresh').addEventListener('click', renderAdmin);
 document.getElementById('tabAdmin').addEventListener('click', renderAdmin);
-if (ADMIN_CODE) document.getElementById('adminLinkWrap').style.display = '';
-document.getElementById('adminLink').addEventListener('click', e => {
-  e.preventDefault();
-  const code = prompt('Код доступа');
-  if (code === null) return;
-  if (code === ADMIN_CODE && ADMIN_CODE) { document.getElementById('tabAdmin').style.display = ''; document.getElementById('tabAdmin').click(); }
-  else alert('Неверный код.');
+
+let adFineBusy = false;
+document.getElementById('adFineBtn').addEventListener('click', async () => {
+  if (adFineBusy) return;
+  const st = document.getElementById('adFineStatus');
+  const account = document.getElementById('adFineAcc').value;
+  const amount = Number(document.getElementById('adFineAmt').value);
+  const reason = document.getElementById('adFineReason').value;
+  if (!Number.isInteger(amount) || amount < 1) { st.textContent = 'Укажите сумму — целое число ELB.'; return; }
+  adFineBusy = true; st.textContent = 'Выполняется...';
+  const res = await act('admin_fine', {account, amount, reason});
+  adFineBusy = false;
+  if (!res.ok) { st.textContent = res.message || 'Не удалось выполнить.'; return; }
+  st.textContent = 'Штраф ' + res.fined.amount + ' ELB назначен счёту ' + res.fined.account + '. Клиент получил уведомление.';
+  document.getElementById('adFineAmt').value = ''; document.getElementById('adFineReason').value = '';
 });
 
 // --- Чат-бот ---
@@ -1192,7 +1008,7 @@ const intents = [
     a:() => 'Во вкладке «Сборы» два фонда: «Народное ополчение Елбаса» и «Социальные нужды». Укажите сумму, при желании комментарий и отметьте анонимность, после чего пожертвование спишется со счёта, а у вас останется квитанция. Сборы ведутся в игровой валюте ELB.' },
   { n:'transfer', k:['перевод','перевести','отправить','скинуть','на другой счет','на другой id','кому перевести'],
     a:() => 'Откройте вкладку «Перевод», укажите ID получателя (формат EL-123456), сумму и при желании комментарий. Получатель увидит ELB на балансе сразу после зачисления, а у вас останется квитанция о переводе.',
-    more:() => 'Получить переводы можно, сообщив отправителю свой ID: ' + myId + '. Создать дополнительный счёт можно кнопкой «Новый счёт» вверху.' },
+    more:() => 'Получить переводы можно, сообщив отправителю свой ID: ' + myId + '.' },
   { n:'deposit', k:['пополн','положить','внести','зачислить','получить деньги','как получить'],
     a:() => 'Для пополнения нажмите «Подать заявку на пополнение» на главной: укажите сумму (до 30 000 ELB за заявку), основание, описание источника средств и контакт для связи. Заявку проверяет отделение, и после одобрения сумма зачисляется на счёт. Статус виден в блоке «Заявки на пополнение».',
     more:() => 'Одновременно может рассматриваться только одна заявка, и подать можно не больше трёх заявок в сутки. При отказе причина будет указана рядом с заявкой.' },
@@ -1244,7 +1060,7 @@ document.querySelectorAll('.chat-quick button').forEach(b => {
 addChatMsg('Здравствуйте! Я виртуальный помощник Elbas Bank. Спросите про баланс, штрафы, документы или услуги отделения.', 'bot');
 
 try { if (window.Telegram && window.Telegram.WebApp) { window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); } } catch(e){}
-initAccount();
+init();
 </script>
 </body>
 </html>
